@@ -1,7 +1,25 @@
 # AcademyCraft Spring Security 전환 계획
 
 > 작성일: 2026-10-16
-> 상태: **계획만 문서화, 코드 수정 없음** (별도 승인 후 구현)
+> 상태: **구현 완료** (2026-10-16, 브랜치 `feat/login-security`, PR 제출, main 병합 대기)
+> 테스트: 338/338 PASS (기존 318 + 신규 보안 20)
+
+## 구현 요약
+
+| 항목 | 상태 |
+|---|---|
+| 아이디·비밀번호 로그인 | ✅ `POST /api/rea/auth/login` |
+| BCrypt 해싱 | ✅ strength 12 (운영), 4 (개발·테스트) |
+| JWT (Access 15분 + Refresh 7일) | ✅ jjwt 0.12.6 |
+| Refresh 로테이션 | ✅ DB 해시 대조, jti 고유값 |
+| 로그인 실패 잠금 | ✅ 5회 실패 시 15분 잠금 |
+| 계정 비활성화 | ✅ 로그인·토큰 모두 차단 |
+| 비밀번호 재설정 | ✅ 토큰 방식 (30분 유효) |
+| 원장의 회원 자격 설정 | ✅ `PUT /members/{id}/credentials` |
+| X-Auth-Key 제한 | ✅ `!prod` 프로파일에서만 동작 |
+| 학원별 격리 | ✅ 기존 인터셉터 유지 (JWT 컨텍스트 연동) |
+| 역할별 권한 | ✅ 기존 ReaAccessRules 유지 |
+| 학부모 자녀 연결 | ✅ `linkedStudentId` |
 
 ---
 

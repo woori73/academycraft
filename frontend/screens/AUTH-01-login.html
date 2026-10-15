@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AcademyCraft - 로그인 - AUTH-01</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, sans-serif; background: #f5f5f5;
+         display: flex; justify-content: center; align-items: center;
+         min-height: 100vh; padding: 16px; }
+  .card { background: #fff; padding: 32px 24px; border-radius: 12px;
+          width: 100%; max-width: 380px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
+  .logo { text-align: center; margin-bottom: 24px; }
+  .logo h1 { font-size: 24px; color: #0066cc; }
+  .logo p { font-size: 13px; color: #888; margin-top: 4px; }
+  .field { margin-bottom: 16px; }
+  .field label { display: block; font-size: 13px; color: #555; margin-bottom: 6px; }
+  .field input { width: 100%; padding: 12px; border: 1px solid #ddd;
+                 border-radius: 8px; font-size: 16px; }
+  .btn { width: 100%; padding: 14px; background: #0066cc; color: #fff;
+         border: none; border-radius: 8px; font-size: 16px; cursor: pointer; }
+  .btn:disabled { background: #999; }
+  .msg { padding: 10px; border-radius: 8px; margin-bottom: 12px;
+         display: none; font-size: 14px; }
+  .msg.err { display: block; background: #fce8e6; color: #c5221f; }
+  .links { text-align: center; margin-top: 16px; font-size: 13px; }
+  .links a { color: #0066cc; text-decoration: none; }
+  @media (max-width: 480px) {
+    button, .btn { min-height: 44px; }
+    input { min-height: 44px; font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">
+    <h1>AcademyCraft</h1>
+    <p>학원관리 로그인</p>
+  </div>
+  <div class="msg err" id="msg"></div>
+  <div class="field">
+    <label for="loginId">아이디</label>
+    <input type="text" id="loginId" autocomplete="username" placeholder="아이디 입력">
+  </div>
+  <div class="field">
+    <label for="password">비밀번호</label>
+    <input type="password" id="password" autocomplete="current-password"
+           placeholder="비밀번호 입력" onkeydown="if(event.key==='Enter')doLogin()">
+  </div>
+  <button class="btn" id="loginBtn" onclick="doLogin()">로그인</button>
+  <div class="links">
+    <a href="AUTH-02-password-reset.html">비밀번호 찾기</a>
+  </div>
+</div>
+<script src="../components/auth.js"></script>
+<script>
+  async function doLogin() {
+    const btn = document.getElementById('loginBtn');
+    const msg = document.getElementById('msg');
+    msg.className = 'msg';
+    btn.disabled = true;
+    try {
+      const data = await Auth.login(
+        document.getElementById('loginId').value.trim(),
+        document.getElementById('password').value
+      );
+      // 역할별 랜딩: 학부모는 자녀 화면, 원장·강사는 대시보드
+      sessionStorage.setItem('acName', data.name);
+      sessionStorage.setItem('acRole', data.role);
+      sessionStorage.setItem('acAcademyId', data.academyId);
+      location.href = 'OPS-02-dashboard.html';
+    } catch (e) {
+      msg.textContent = e.message;
+      msg.className = 'msg err';
+    } finally {
+      btn.disabled = false;
+    }
+  }
+</script>
+</body>
+</html>
