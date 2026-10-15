@@ -56,6 +56,11 @@ public class AuthKeyFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request,
                                    HttpServletResponse response,
                                    FilterChain filterChain) throws ServletException, IOException {
+        // JWT 필터가 이미 인증했으면 폴백하지 않는다 (Bearer 우선)
+        if (SecurityContextHolder.getContext().getAuthentication() != null) {
+            filterChain.doFilter(request, response);
+            return;
+        }
         String authKey = request.getHeader(AUTH_KEY_HEADER);
         if (authKey == null || authKey.isBlank()) {
             reject(response, "인증키가 필요합니다. (X-Auth-Key 헤더)");

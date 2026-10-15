@@ -15,7 +15,9 @@ public record AuthContext(
         Long principalId,
         Long academyId,
         ReaRole role,
-        String name) {
+        String name,
+        /** 학부모 계정(MEMBER+PARENT)에 연결된 자녀 학생 ID. 그 외 null. */
+        Long linkedStudentId) {
 
     public enum PrincipalType {
         /** 원장·강사 (ReaMember) */
@@ -41,12 +43,26 @@ public record AuthContext(
 
     /**
      * 학부모 본인 자녀의 학생 ID.
+     * - 학생 인증키 로그인(STUDENT): principalId가 곧 학생 ID
+     * - 정식 로그인(MEMBER + PARENT): linkedStudentId (미연결 시 예외)
      * 학부모가 아닌 경우 IllegalStateException.
      */
     public Long ownStudentId() {
-        if (!isParent() || principalType != PrincipalType.STUDENT) {
+        if (!isParent()) {
             throw new IllegalStateException("학부모 인증 컨텍스트가 아닙니다.");
         }
-        return principalId;
+        if (principalType == PrincipalType.STUDENT) {
+            return principalId;
+        }
+        if (linkedStudentId != null) {
+            return linkedStudentId;
+        }
+        throw new IllegalStateException("학부모 계정에 연결된 학생이 없습니다.");
+    }
+
+    /** 하위 호환 생성자 (linkedStudentId 없음) */
+    public AuthContext(PrincipalType principalType, Long principalId,
+                       Long academyId, ReaRole role, String name) {
+        this(principalType, principalId, academyId, role, name, null);
     }
 }

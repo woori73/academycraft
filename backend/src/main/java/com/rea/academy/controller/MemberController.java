@@ -1,9 +1,12 @@
 package com.rea.academy.controller;
 
 import com.rea.academy.domain.member.ReaRole;
+import com.rea.academy.dto.AuthDto;
 import com.rea.academy.dto.MemberDto;
 import com.rea.academy.dto.StudentDto;
+import com.rea.academy.service.AuthService;
 import com.rea.academy.service.MemberService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -20,6 +23,7 @@ import java.util.List;
 public class MemberController {
 
     private final MemberService memberService;
+    private final AuthService authService;
 
     // ===== 원장·강사 =====
 
@@ -58,6 +62,20 @@ public class MemberController {
             @PathVariable Long academyId,
             @PathVariable Long memberId) {
         return ResponseEntity.ok(memberService.renewMemberKey(academyId, memberId));
+    }
+
+    /**
+     * 원장 전용: 회원의 로그인 자격 설정·초기화 (아이디 + 임시 비밀번호).
+     * 학부모 계정은 linkedStudentId로 자녀 학생 연결 가능.
+     */
+    @PutMapping("/members/{memberId}/credentials")
+    public ResponseEntity<Void> setMemberCredentials(
+            @PathVariable Long academyId,
+            @PathVariable Long memberId,
+            @Valid @RequestBody AuthDto.SetCredentialsRequest req) {
+        authService.setMemberCredentials(academyId, memberId,
+                req.getLoginId(), req.getTempPassword(), req.getLinkedStudentId());
+        return ResponseEntity.noContent().build();
     }
 
     // ===== 학생 =====
