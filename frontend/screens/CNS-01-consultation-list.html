@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AcademyCraft - 문의 목록 - CNS-01</title>
+<style>
+  /* 최소 기능 UI. 디자인 차별화는 2차. 업무 로직과 분리. */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, sans-serif; background: #f5f5f5; padding: 16px; }
+  .header { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+  .header h1 { font-size: 20px; }
+  .login { background: #fff; padding: 14px; border-radius: 8px; margin-bottom: 16px;
+           display: flex; gap: 8px; flex-wrap: wrap; }
+  .login input { padding: 10px; border: 1px solid #ddd; border-radius: 8px; flex: 1; min-width: 180px; }
+  .login button, .btn { padding: 10px 16px; background: #0066cc; color: #fff; border: none;
+                        border-radius: 8px; cursor: pointer; }
+  .btn-sm { padding: 6px 12px; font-size: 13px; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+  .tab { padding: 8px 14px; border-radius: 16px; border: 1px solid #0066cc; background: #fff;
+         color: #0066cc; cursor: pointer; font-size: 13px; }
+  .tab.on { background: #0066cc; color: #fff; }
+  .card { background: #fff; padding: 14px; border-radius: 8px; margin-bottom: 8px; cursor: pointer; }
+  .card .ttl { font-weight: bold; font-size: 15px; margin-bottom: 4px; }
+  .card .meta { color: #666; font-size: 12px; margin-bottom: 6px; }
+  .card .body { font-size: 13px; color: #888; }
+  .tag { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px;
+         font-weight: bold; margin-right: 6px; }
+  .tag-INQUIRY { background: #e8f0fe; color: #1a56db; }
+  .tag-NEWS { background: #f3e8fd; color: #681da8; }
+  .st-OPEN { background: #fef7e0; color: #b06000; }
+  .st-ANSWERED { background: #e6f4ea; color: #1a7f37; }
+  .st-CLOSED { background: #f1f3f4; color: #666; }
+  .msg { padding: 10px; border-radius: 8px; margin-bottom: 12px; display: none; }
+  .msg.ok { display: block; background: #e6f4ea; color: #1a7f37; }
+  .msg.err { display: block; background: #fce8e6; color: #c5221f; }
+  @media (max-width: 600px) {
+    .login { flex-direction: column; }
+  }
+
+  /* [Phase5-Task4] 모바일 터치 영역 보강 (480px 이하) */
+  @media (max-width: 480px) {
+    button, .btn { min-height: 44px; }
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+    select, textarea { min-height: 44px; font-size: 16px; }
+    input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-width: 0; flex: none; accent-color: #0066cc; }
+  }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>문의 목록</h1>
+  <p style="color:#666;font-size:13px;margin-top:4px;">REA 5단계 구현 - CNS-01 · 내 1:1 상담 스레드 (문의·아이소식)</p>
+</div>
+
+<div class="login">
+  <input id="authkey" placeholder="학생 인증키 입력 (학부모 로그인)">
+  <button onclick="loadList()">조회</button>
+</div>
+
+<div class="tabs" id="tabs">
+  <button class="tab on" data-type="" onclick="setType('')">전체</button>
+  <button class="tab" data-type="INQUIRY" onclick="setType('INQUIRY')">문의</button>
+  <button class="tab" data-type="NEWS" onclick="setType('NEWS')">아이소식</button>
+</div>
+
+<div class="msg" id="msg"></div>
+<div id="list"></div>
+
+<script src="../components/api-client.js"></script>
+<script>
+var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+let typeFilter = '';
+
+function showMsg(text, ok) {
+  const m = document.getElementById('msg');
+  m.className = 'msg ' + (ok ? 'ok' : 'err');
+  m.textContent = text;
+}
+
+function authKey() {
+  const v = document.getElementById('authkey').value.trim();
+  if (!v) { showMsg('학생 인증키를 입력하세요.', false); return null; }
+  return v;
+}
+
+function setType(t) {
+  typeFilter = t;
+  document.querySelectorAll('#tabs .tab').forEach(b =>
+    b.classList.toggle('on', b.dataset.type === t));
+  loadList();
+}
+
+async function loadList() {
+  const key = authKey();
+  if (!key) return;
+  // 학생 인증키는 X-Auth-Key 헤더로만 전송 (URL 파라미터 사용 안 함)
+  let url = `/1/consultations`;
+  if (typeFilter) url += `?type=${typeFilter}`;
+  const res = await apiGet(url, key);
+  const data = await res.json();
+  if (!res.ok) { showMsg(data.message || '조회 실패', false); return; }
+  const box = document.getElementById('list');
+  box.innerHTML = '';
+  if (data.length === 0) {
+    box.innerHTML = '<div class="card"><div class="body">상담 내역이 없습니다.</div></div>';
+    return;
+  }
+  data.forEach(c => {
+    const d = document.createElement('div');
+    d.className = 'card';
+    d.onclick = () => location.href = `CNS-05-consultation-detail.html?id=${c.id}`;
+    d.innerHTML =
+      `<div class="ttl">${escapeHtml(c.title)}</div>` +
+      `<div class="meta"><span class="tag tag-${c.type}">${escapeHtml(c.typeLabel)}</span>` +
+      `<span class="tag st-${c.status}">${escapeHtml(c.statusLabel)}</span>` +
+      `${c.messageCount}개 메시지 · ${formatDt(c.lastMessageAt || c.createdAt)}</div>` +
+      `<div class="body">${escapeHtml(c.studentName)} 학부모</div>`;
+    box.appendChild(d);
+  });
+}
+
+function formatDt(s) {
+  if (!s) return '';
+  return s.replace('T', ' ').slice(0, 16);
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AcademyCraft - 아이소식 작성 - CNS-04</title>
+<style>
+  /* 최소 기능 UI. 디자인 차별화는 2차. 업무 로직과 분리. */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, sans-serif; background: #f5f5f5; padding: 16px; }
+  .header { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+  .header h1 { font-size: 20px; }
+  .login { background: #fff; padding: 14px; border-radius: 8px; margin-bottom: 16px;
+           display: flex; gap: 8px; flex-wrap: wrap; }
+  .login input { padding: 10px; border: 1px solid #ddd; border-radius: 8px; flex: 1; min-width: 160px; }
+  .login button, .btn { padding: 10px 16px; background: #0066cc; color: #fff; border: none;
+                        border-radius: 8px; cursor: pointer; }
+  .wrap { display: flex; gap: 12px; align-items: flex-start; }
+  .list { flex: 1; min-width: 0; }
+  .form { flex: 1.2; min-width: 0; background: #fff; padding: 16px; border-radius: 8px; }
+  .card { background: #fff; padding: 12px 14px; border-radius: 8px; margin-bottom: 8px; cursor: pointer; }
+  .card.sel { outline: 2px solid #0066cc; }
+  .card .nm { font-weight: bold; font-size: 14px; }
+  .card .meta { color: #666; font-size: 12px; }
+  .form label { display: block; font-size: 13px; color: #666; margin: 12px 0 6px; }
+  .form label:first-child { margin-top: 0; }
+  .form input, .form textarea { width: 100%; padding: 10px; border: 1px solid #ddd;
+                                border-radius: 8px; font-size: 14px; }
+  .form textarea { min-height: 160px; resize: vertical; }
+  .btn-send { width: 100%; margin-top: 16px; padding: 12px; font-size: 15px; }
+  .msg { padding: 10px; border-radius: 8px; margin-bottom: 12px; display: none; }
+  .msg.ok { display: block; background: #e6f4ea; color: #1a7f37; }
+  .msg.err { display: block; background: #fce8e6; color: #c5221f; }
+  @media (max-width: 800px) {
+    .wrap { flex-direction: column; }
+    .login { flex-direction: column; }
+  }
+
+  /* [Phase5-Task4] 모바일 터치 영역 보강 (480px 이하) */
+  @media (max-width: 480px) {
+    button, .btn { min-height: 44px; }
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+    select, textarea { min-height: 44px; font-size: 16px; }
+    input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-width: 0; flex: none; accent-color: #0066cc; }
+  }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>아이소식 작성</h1>
+  <p style="color:#666;font-size:13px;margin-top:4px;">REA 5단계 구현 - CNS-04 · 특정 학부모에게 1:1 소식 전달 (강사용)</p>
+</div>
+
+<div class="login">
+  <input id="memberid" placeholder="내 회원 ID (원장·강사)">
+  <button onclick="loadStudents()">학생 불러오기</button>
+</div>
+
+<div class="msg" id="msg"></div>
+
+<div class="wrap">
+  <div class="list" id="students"></div>
+  <div class="form">
+    <label>받는 학부모</label>
+    <div id="target" style="font-weight:bold;font-size:15px;color:#0066cc">학생을 선택하세요</div>
+    <label for="title">제목</label>
+    <input id="title" placeholder="예: 10월 학습 리포트">
+    <label for="content">내용</label>
+    <textarea id="content" placeholder="진도 상황·성적표 등 개별 소식을 입력하세요"></textarea>
+    <button class="btn btn-send" onclick="sendNews()">1:1 전송</button>
+  </div>
+</div>
+
+<script src="../components/api-client.js"></script>
+<script>
+var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+let targetStudentId = null;
+let targetStudentName = '';
+
+function showMsg(text, ok) {
+  const m = document.getElementById('msg');
+  m.className = 'msg ' + (ok ? 'ok' : 'err');
+  m.textContent = text;
+}
+
+function memberId() {
+  const v = document.getElementById('memberid').value.trim();
+  if (!v) { showMsg('내 회원 ID를 입력하세요.', false); return null; }
+  return v;
+}
+
+async function loadStudents() {
+  if (!memberId()) return;
+  const res = await apiGet(`/1/students`);
+  const data = await res.json();
+  if (!res.ok) { showMsg(data.message || '학생 조회 실패', false); return; }
+  const box = document.getElementById('students');
+  box.innerHTML = '';
+  if (data.length === 0) {
+    box.innerHTML = '<div class="card"><div class="meta">등록된 학생이 없습니다.</div></div>';
+    return;
+  }
+  data.forEach(s => {
+    const d = document.createElement('div');
+    d.className = 'card' + (s.id === targetStudentId ? ' sel' : '');
+    d.onclick = () => {
+      targetStudentId = s.id;
+      targetStudentName = s.name;
+      document.getElementById('target').textContent = `${s.name} 학부모`;
+      document.querySelectorAll('#students .card').forEach(el => el.classList.remove('sel'));
+      d.classList.add('sel');
+    };
+    d.innerHTML = `<div class="nm">${escapeHtml(s.name)}</div>` +
+      `<div class="meta">${escapeHtml(s.grade || '')} ${escapeHtml(s.parentName || '')}</div>`;
+    box.appendChild(d);
+  });
+}
+
+async function sendNews() {
+  const mid = memberId();
+  if (!mid) return;
+  if (!targetStudentId) { showMsg('받는 학생을 선택하세요.', false); return; }
+  const title = document.getElementById('title').value.trim();
+  const content = document.getElementById('content').value.trim();
+  if (!title) { showMsg('제목을 입력하세요.', false); return; }
+  if (!content) { showMsg('내용을 입력하세요.', false); return; }
+  const res = await apiPost(`/1/consultations`, {
+      studentId: targetStudentId, type: 'NEWS', title, content,
+      authorMemberId: Number(mid)
+    });
+  const data = await res.json();
+  if (!res.ok) { showMsg(data.message || '전송 실패', false); return; }
+  const note = data.notificationSentCount > 0 ? ' (학부모 알림 발송됨)'
+    : data.notificationSkippedCount > 0 ? ' (학부모 알림 OFF로 생략)'
+    : data.notificationError ? ' (알림 발송 오류)' : '';
+  showMsg(`${targetStudentName} 학부모에게 아이소식을 전송했습니다.` + note, true);
+  document.getElementById('title').value = '';
+  document.getElementById('content').value = '';
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+</script>
+</body>
+</html>

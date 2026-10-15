@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AcademyCraft - 일정·캘린더 - OPS-01</title>
+<style>
+  /* 최소 기능 UI. 디자인 차별화는 2차. 업무 로직과 분리. */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, sans-serif; background: #f5f5f5; padding: 16px; }
+  .header { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+  .header h1 { font-size: 20px; }
+  .nav { margin-bottom: 16px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn { padding: 12px 20px; background: #0066cc; color: #fff; border: none;
+         border-radius: 8px; cursor: pointer; font-size: 15px; }
+  .btn-sm { padding: 6px 12px; font-size: 13px; text-decoration: none; display: inline-block; }
+  .btn-ghost { background: #fff; color: #0066cc; border: 1px solid #0066cc; }
+  .btn-danger { background: #fff; color: #c5221f; border: 1px solid #c5221f; }
+  .msg { padding: 10px; border-radius: 8px; margin-bottom: 12px; display: none; }
+  .msg.ok { display: block; background: #e6f4ea; color: #1a7f37; }
+  .msg.err { display: block; background: #fce8e6; color: #c5221f; }
+  .cal { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+  .cal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .cal-head input { padding: 8px; border: 1px solid #ddd; border-radius: 8px; }
+  .grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .dow { text-align: center; font-size: 12px; color: #888; padding: 6px 0; font-weight: bold; }
+  .day { min-height: 64px; border: 1px solid #eee; border-radius: 6px; padding: 4px;
+         font-size: 13px; cursor: pointer; background: #fff; }
+  .day:hover { border-color: #0066cc; }
+  .day.selected { border: 2px solid #0066cc; }
+  .day .num { font-weight: bold; }
+  .day .dot { display: block; font-size: 11px; color: #0066cc; white-space: nowrap;
+              overflow: hidden; text-overflow: ellipsis; }
+  .day .dot.consult { color: #b06000; }
+  .day.blank { background: transparent; border: none; cursor: default; }
+  .panel { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+  .panel h2 { font-size: 16px; margin-bottom: 12px; }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 13px; color: #555; margin-bottom: 6px; font-weight: bold; }
+  .field input, .field select, .field textarea { width: 100%; padding: 10px; border: 1px solid #ddd;
+         border-radius: 8px; font-size: 14px; }
+  .row { display: flex; gap: 10px; }
+  .row .field { flex: 1; }
+  .item { border: 1px solid #eee; border-radius: 8px; padding: 10px; margin-bottom: 8px; }
+  .item .t { font-weight: bold; font-size: 14px; }
+  .item .m { font-size: 12px; color: #666; margin-top: 4px; }
+  .item .acts { margin-top: 8px; display: flex; gap: 6px; }
+  .hint { font-size: 12px; color: #888; margin-top: 4px; }
+  @media (max-width: 600px) {
+    .row { flex-direction: column; gap: 0; }
+    .day { min-height: 48px; }
+  }
+
+  /* [Phase5-Task4] 모바일 터치 영역 보강 (480px 이하) */
+  @media (max-width: 480px) {
+    button, .btn { min-height: 44px; }
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+    select, textarea { min-height: 44px; font-size: 16px; }
+    input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-width: 0; flex: none; accent-color: #0066cc; }
+  }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>일정·캘린더</h1>
+  <p style="color:#666;font-size:13px;margin-top:4px;">REA 7단계 구현 - OPS-01 · 학원/반별 일정 + 상담 일정 연결</p>
+</div>
+
+<div class="nav">
+  <a href="OPS-01-schedule-calendar.html" class="btn btn-sm">일정·캘린더</a>
+  <a href="OPS-02-dashboard.html" class="btn btn-ghost btn-sm">통계 대시보드</a>
+  <a href="OPS-03-excel-io.html" class="btn btn-ghost btn-sm">엑셀 가져오기·내보내기</a>
+</div>
+
+<div class="msg" id="msg"></div>
+
+<div class="cal">
+  <div class="cal-head">
+    <input type="month" id="ym">
+    <button class="btn btn-sm" onclick="loadMonth()">조회</button>
+  </div>
+  <div class="grid" id="grid"></div>
+</div>
+
+<div class="panel">
+  <h2 id="day-title">일정 목록</h2>
+  <div id="day-list"><p class="hint">날짜를 선택하세요.</p></div>
+</div>
+
+<div class="panel">
+  <h2 id="form-title">일정 등록</h2>
+  <input type="hidden" id="f-id">
+  <div class="field">
+    <label>제목 *</label>
+    <input id="f-title" placeholder="예: 휴원일, 수학A반 특강">
+  </div>
+  <div class="row">
+    <div class="field">
+      <label>일자 *</label>
+      <input type="date" id="f-date">
+    </div>
+    <div class="field">
+      <label>시작 시각</label>
+      <input type="time" id="f-start">
+    </div>
+    <div class="field">
+      <label>종료 시각</label>
+      <input type="time" id="f-end">
+    </div>
+  </div>
+  <div class="row">
+    <div class="field">
+      <label>대상</label>
+      <select id="f-target" onchange="onTargetChange()">
+        <option value="ALL">학원 전체</option>
+        <option value="CLASS">반별</option>
+      </select>
+    </div>
+    <div class="field" id="class-wrap" style="display:none;">
+      <label>대상 반 *</label>
+      <select id="f-class"><option value="">반 선택</option></select>
+    </div>
+  </div>
+  <div class="field">
+    <label>상담 일정 연결 (선택)</label>
+    <select id="f-consult"><option value="">연결 없음 (일반 일정)</option></select>
+    <p class="hint">상담 스레드와 연결하면 상담 약속 일정으로 등록됩니다.</p>
+  </div>
+  <div class="field">
+    <label>메모</label>
+    <textarea id="f-memo" rows="2" placeholder="예: 2층 상담실"></textarea>
+  </div>
+  <div class="row">
+    <div class="field"><button class="btn" id="f-submit" onclick="saveSchedule()">등록</button></div>
+    <div class="field"><button class="btn btn-ghost" onclick="resetForm()">초기화</button></div>
+  </div>
+</div>
+
+<script src="../components/api-client.js"></script>
+<script>
+var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+let schedules = [];
+let selectedDate = null;
+
+function showMsg(text, ok) {
+  const el = document.getElementById('msg');
+  el.textContent = text;
+  el.className = 'msg ' + (ok ? 'ok' : 'err');
+  setTimeout(() => { el.className = 'msg'; }, 4000);
+}
+
+async function init() {
+  const now = new Date();
+  document.getElementById('ym').value =
+    now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  await Promise.all([loadClasses(), loadConsultations()]);
+  await loadMonth();
+}
+
+async function loadClasses() {
+  try {
+    const res = await apiGet(`/1/classes`);
+    if (!res.ok) return;
+    const list = await res.json();
+    const sel = document.getElementById('f-class');
+    list.forEach(c => {
+      const o = document.createElement('option');
+      o.value = c.id; o.textContent = c.name;
+      sel.appendChild(o);
+    });
+  } catch (e) { /* 반 목록 실패 시 반별 일정은 수동 입력 */ }
+}
+
+async function loadConsultations() {
+  try {
+    const res = await apiGet(`/1/consultations`);
+    if (!res.ok) return;
+    const list = await res.json();
+    const sel = document.getElementById('f-consult');
+    list.forEach(c => {
+      const o = document.createElement('option');
+      o.value = c.id;
+      o.textContent = `[${c.studentName || ''}] ${c.title}`;
+      sel.appendChild(o);
+    });
+  } catch (e) { /* 상담 연결 선택 사항 */ }
+}
+
+async function loadMonth() {
+  const ym = document.getElementById('ym').value;
+  if (!ym) { showMsg('월을 선택하세요.', false); return; }
+  try {
+    const res = await apiGet(`/1/schedules?yearMonth=${ym}`);
+    if (!res.ok) throw new Error('조회 실패');
+    schedules = await res.json();
+    renderCalendar(ym);
+    renderDayList();
+  } catch (e) {
+    showMsg('일정 조회 실패: ' + e.message, false);
+  }
+}
+
+function renderCalendar(ym) {
+  const [y, m] = ym.split('-').map(Number);
+  const first = new Date(y, m - 1, 1);
+  const lastDay = new Date(y, m, 0).getDate();
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+  ['일','월','화','수','목','금','토'].forEach(d => {
+    const el = document.createElement('div');
+    el.className = 'dow'; el.textContent = d;
+    grid.appendChild(el);
+  });
+  for (let i = 0; i < first.getDay(); i++) {
+    const el = document.createElement('div');
+    el.className = 'day blank';
+    grid.appendChild(el);
+  }
+  for (let d = 1; d <= lastDay; d++) {
+    const dateStr = `${ym}-${String(d).padStart(2, '0')}`;
+    const daySchedules = schedules.filter(s => s.date === dateStr);
+    const el = document.createElement('div');
+    el.className = 'day' + (selectedDate === dateStr ? ' selected' : '');
+    let html = `<div class="num">${d}</div>`;
+    daySchedules.slice(0, 3).forEach(s => {
+      const cls = s.consultationId ? 'dot consult' : 'dot';
+      html += `<span class="${cls}">● ${escapeHtml(s.title)}</span>`;
+    });
+    if (daySchedules.length > 3) html += `<span class="dot">+${daySchedules.length - 3}건</span>`;
+    el.innerHTML = html;
+    el.onclick = () => { selectedDate = dateStr; renderCalendar(ym); renderDayList(); };
+    grid.appendChild(el);
+  }
+}
+
+function renderDayList() {
+  const wrap = document.getElementById('day-list');
+  if (!selectedDate) { wrap.innerHTML = '<p class="hint">날짜를 선택하세요.</p>'; return; }
+  document.getElementById('day-title').textContent = `${selectedDate} 일정`;
+  const daySchedules = schedules
+    .filter(s => s.date === selectedDate)
+    .sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
+  if (daySchedules.length === 0) {
+    wrap.innerHTML = '<p class="hint">등록된 일정이 없습니다.</p>';
+  } else {
+    wrap.innerHTML = '';
+    daySchedules.forEach(s => {
+      const el = document.createElement('div');
+      el.className = 'item';
+      const time = [s.startTime, s.endTime].filter(Boolean).join(' ~ ');
+      const target = s.targetType === 'CLASS' ? `반별(${escapeHtml(s.className || '')})` : '학원 전체';
+      const consult = s.consultationId
+        ? `<div class="m">상담 연결: ${escapeHtml(s.consultationTitle || '')}</div>` : '';
+      el.innerHTML =
+        `<div class="t">${escapeHtml(s.title)}</div>` +
+        `<div class="m">${time} · ${target}</div>` +
+        (s.memo ? `<div class="m">${escapeHtml(s.memo)}</div>` : '') + consult +
+        `<div class="acts">
+           <button class="btn btn-ghost btn-sm" data-act="edit">수정</button>
+           <button class="btn btn-danger btn-sm" data-act="del">삭제</button>
+         </div>`;
+      el.querySelector('[data-act="edit"]').onclick = () => fillForm(s);
+      el.querySelector('[data-act="del"]').onclick = () => deleteSchedule(s.id, s.title);
+      wrap.appendChild(el);
+    });
+  }
+  // 등록 폼 일자를 선택일로
+  if (!document.getElementById('f-id').value) {
+    document.getElementById('f-date').value = selectedDate;
+  }
+}
+
+function fillForm(s) {
+  document.getElementById('f-id').value = s.id;
+  document.getElementById('f-title').value = s.title;
+  document.getElementById('f-date').value = s.date;
+  document.getElementById('f-start').value = s.startTime || '';
+  document.getElementById('f-end').value = s.endTime || '';
+  document.getElementById('f-target').value = s.targetType || 'ALL';
+  onTargetChange();
+  document.getElementById('f-class').value = s.classId || '';
+  document.getElementById('f-consult').value = s.consultationId || '';
+  document.getElementById('f-memo').value = s.memo || '';
+  document.getElementById('form-title').textContent = '일정 수정';
+  document.getElementById('f-submit').textContent = '수정';
+  window.scrollTo(0, document.body.scrollHeight);
+}
+
+function resetForm() {
+  document.getElementById('f-id').value = '';
+  document.getElementById('f-title').value = '';
+  document.getElementById('f-date').value = selectedDate || '';
+  document.getElementById('f-start').value = '';
+  document.getElementById('f-end').value = '';
+  document.getElementById('f-target').value = 'ALL';
+  onTargetChange();
+  document.getElementById('f-class').value = '';
+  document.getElementById('f-consult').value = '';
+  document.getElementById('f-memo').value = '';
+  document.getElementById('form-title').textContent = '일정 등록';
+  document.getElementById('f-submit').textContent = '등록';
+}
+
+function onTargetChange() {
+  const isClass = document.getElementById('f-target').value === 'CLASS';
+  document.getElementById('class-wrap').style.display = isClass ? 'block' : 'none';
+}
+
+async function saveSchedule() {
+  const id = document.getElementById('f-id').value;
+  const target = document.getElementById('f-target').value;
+  const body = {
+    title: document.getElementById('f-title').value,
+    date: document.getElementById('f-date').value,
+    startTime: document.getElementById('f-start').value || null,
+    endTime: document.getElementById('f-end').value || null,
+    targetType: target,
+    classId: target === 'CLASS'
+      ? (Number(document.getElementById('f-class').value) || null) : null,
+    consultationId: Number(document.getElementById('f-consult').value) || null,
+    memo: document.getElementById('f-memo').value || null
+  };
+  try {
+    const res = id
+      ? await apiPut(`/1/schedules/${id}`, body)
+      : await apiPost(`/1/schedules`, body);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || '저장 실패');
+    }
+    showMsg(id ? '일정이 수정되었습니다.' : '일정이 등록되었습니다.', true);
+    resetForm();
+    await loadMonth();
+  } catch (e) {
+    showMsg('저장 실패: ' + e.message, false);
+  }
+}
+
+async function deleteSchedule(id, title) {
+  if (!confirm(`'${title}' 일정을 삭제할까요?`)) return;
+  try {
+    const res = await apiDelete(`/1/schedules/${id}`);
+    if (!res.ok) throw new Error('삭제 실패');
+    showMsg('일정이 삭제되었습니다.', true);
+    resetForm();
+    await loadMonth();
+  } catch (e) {
+    showMsg('삭제 실패: ' + e.message, false);
+  }
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AcademyCraft - 반 목록</title>
+<style>
+  /* 최소 기능 UI. 디자인 차별화는 2차. 업무 로직과 분리. */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, sans-serif; background: #f5f5f5; padding: 16px; }
+  .header { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+  .header h1 { font-size: 20px; }
+  .nav { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .nav a { font-size: 13px; color: #0066cc; text-decoration: none; padding: 6px 10px; border: 1px solid #cfe0f5; border-radius: 6px; background: #f0f6ff; }
+  .toolbar { display: flex; gap: 8px; margin-bottom: 16px; align-items: center; }
+  .toolbar label { font-size: 13px; color: #666; display: flex; align-items: center; gap: 4px; }
+  .class-card { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .class-info { font-size: 14px; color: #333; }
+  .class-name { font-weight: bold; font-size: 16px; margin-bottom: 4px; }
+  .class-name .closed { font-size: 12px; color: #c00; font-weight: normal; margin-left: 6px; }
+  .class-meta { font-size: 13px; color: #666; }
+  .btn { padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; background: #fff; cursor: pointer; font-size: 14px; white-space: nowrap; }
+  .btn-primary { background: #0066cc; color: #fff; border-color: #0066cc; }
+  @media (max-width: 600px) {
+    .class-card { flex-direction: column; align-items: stretch; }
+    .class-card .btn { width: 100%; }
+  }
+
+  /* [Phase5-Task4] 모바일 터치 영역 보강 (480px 이하) */
+  @media (max-width: 480px) {
+    button, .btn, .nav a { min-height: 44px; }
+    .nav a { display: inline-flex; align-items: center; }
+    .toolbar label { display: inline-flex; align-items: center; padding: 12px 4px; }
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+    select, textarea { min-height: 44px; font-size: 16px; }
+    input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-width: 0; flex: none; accent-color: #0066cc; }
+  }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>반 관리</h1>
+  <p style="color:#666;font-size:13px;margin-top:4px;">REA 1차 구현 - CLS-01</p>
+  <div class="nav">
+    <a href="CLS-01-class-list.html">반 목록</a>
+    <a href="timetable-weekly.html">주간 시간표</a>
+    <a href="MBR-01-student-list.html">학생 관리</a>
+  </div>
+</div>
+
+<div class="toolbar">
+  <button class="btn-primary btn" onclick="location.href='CLS-02-class-form.html'">+ 반 생성</button>
+  <label><input type="checkbox" id="include-inactive" onchange="loadClasses()"> 종료된 반 포함</label>
+</div>
+
+<div id="list"></div>
+
+<script src="../components/api-client.js"></script>
+<script>
+var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+
+const DAY_LABEL = { MON: '월', TUE: '화', WED: '수', THU: '목', FRI: '금', SAT: '토', SUN: '일' };
+
+function scheduleText(c) {
+  const days = (c.weekdays || []).map(d => DAY_LABEL[d] || d).join('·');
+  const time = (c.startTime && c.endTime) ? `${c.startTime}~${c.endTime}` : '';
+  return [days, time, c.room].filter(Boolean).join(' ');
+}
+
+async function loadClasses() {
+  const includeInactive = document.getElementById('include-inactive').checked;
+  const res = await apiGet(`/1/classes?includeInactive=${includeInactive}`);
+  const classes = await res.json();
+  const list = document.getElementById('list');
+  list.innerHTML = classes.map(c => `
+    <div class="class-card">
+      <div class="class-info">
+        <div class="class-name">${escapeHtml(c.name)}${c.active ? '' : '<span class="closed">[종료]</span>'}</div>
+        <div class="class-meta">${escapeHtml(c.teacherName || '')} · 학생 ${c.studentCount}명${c.capacity ? ' / 정원 ' + c.capacity + '명' : ''}</div>
+        <div class="class-meta">${escapeHtml(scheduleText(c))}</div>
+      </div>
+      <button class="btn" onclick="location.href='CLS-03-class-detail.html?id=${c.id}'">상세</button>
+    </div>
+  `).join('') || '<p style="color:#999;">등록된 반이 없습니다.</p>';
+}
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+
+loadClasses();
+</script>
+</body>
+</html>

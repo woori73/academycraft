@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AcademyCraft - 반 생성·수정</title>
+<style>
+  /* 최소 기능 UI. 디자인 차별화는 2차. 업무 로직과 분리. */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, sans-serif; background: #f5f5f5; padding: 16px; }
+  .header { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+  .header h1 { font-size: 20px; }
+  .form { background: #fff; padding: 16px; border-radius: 8px; max-width: 560px; }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 13px; color: #555; margin-bottom: 4px; }
+  .field input, .field select, .field textarea { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; }
+  .field textarea { resize: vertical; min-height: 64px; }
+  .days { display: flex; gap: 6px; flex-wrap: wrap; }
+  .days label { display: flex; align-items: center; gap: 4px; font-size: 14px; padding: 8px 10px; border: 1px solid #ddd; border-radius: 8px; cursor: pointer; }
+  .days input { width: auto; }
+  .row { display: flex; gap: 8px; }
+  .row .field { flex: 1; }
+  .btn { padding: 10px 16px; border: 1px solid #ddd; border-radius: 8px; background: #fff; cursor: pointer; font-size: 14px; }
+  .btn-primary { background: #0066cc; color: #fff; border-color: #0066cc; }
+  .actions { display: flex; gap: 8px; margin-top: 4px; }
+  .req { color: #c00; }
+
+  /* [Phase5-Task4] 모바일 터치 영역 보강 (480px 이하) */
+  @media (max-width: 480px) {
+    button, .btn { min-height: 44px; }
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+    select, textarea { min-height: 44px; font-size: 16px; }
+    input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-width: 0; flex: none; accent-color: #0066cc; }
+
+    .days label { padding: 12px 14px; }  }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1 id="title">반 생성</h1>
+  <p style="color:#666;font-size:13px;margin-top:4px;">REA 1차 구현 - CLS-02</p>
+</div>
+
+<div class="form">
+  <div class="field">
+    <label>반 이름 <span class="req">*</span></label>
+    <input type="text" id="f-name" placeholder="예: 수학 A반">
+  </div>
+  <div class="field">
+    <label>설명</label>
+    <textarea id="f-description" placeholder="반 설명 (선택)"></textarea>
+  </div>
+  <div class="field">
+    <label>담당 강사 <span class="req">*</span></label>
+    <select id="f-teacher"><option value="">강사 선택</option></select>
+  </div>
+  <div class="field">
+    <label>수업 요일</label>
+    <div class="days" id="f-days">
+      <label><input type="checkbox" value="MON">월</label>
+      <label><input type="checkbox" value="TUE">화</label>
+      <label><input type="checkbox" value="WED">수</label>
+      <label><input type="checkbox" value="THU">목</label>
+      <label><input type="checkbox" value="FRI">금</label>
+      <label><input type="checkbox" value="SAT">토</label>
+      <label><input type="checkbox" value="SUN">일</label>
+    </div>
+  </div>
+  <div class="row">
+    <div class="field">
+      <label>시작 시각</label>
+      <input type="time" id="f-start">
+    </div>
+    <div class="field">
+      <label>종료 시각</label>
+      <input type="time" id="f-end">
+    </div>
+  </div>
+  <div class="row">
+    <div class="field">
+      <label>강의실</label>
+      <input type="text" id="f-room" placeholder="예: 201호">
+    </div>
+    <div class="field">
+      <label>정원 (비우면 무제한)</label>
+      <input type="number" id="f-capacity" min="1" placeholder="예: 10">
+    </div>
+  </div>
+  <div class="actions">
+    <button class="btn-primary btn" id="btn-save" onclick="save()">생성</button>
+    <button class="btn" onclick="location.href='CLS-01-class-list.html'">취소</button>
+  </div>
+</div>
+
+<script src="../components/api-client.js"></script>
+<script>
+var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+const params = new URLSearchParams(location.search);
+const classId = params.get('id');  // 있으면 수정 모드
+
+async function loadTeachers(selectedId) {
+  // 담당 강사: TEACHER 또는 ACADEMY_OWNER
+  const res = await apiGet(`/1/members`);
+  const members = await res.json();
+  const teachers = members.filter(m => m.role === 'TEACHER' || m.role === 'ACADEMY_OWNER');
+  const sel = document.getElementById('f-teacher');
+  sel.innerHTML = '<option value="">강사 선택</option>' + teachers.map(t =>
+    `<option value="${t.id}"${t.id === selectedId ? ' selected' : ''}>${escapeHtml(t.name)}</option>`
+  ).join('');
+}
+
+function getForm() {
+  const days = [...document.querySelectorAll('#f-days input:checked')].map(el => el.value);
+  const capacity = document.getElementById('f-capacity').value;
+  return {
+    name: document.getElementById('f-name').value.trim(),
+    description: document.getElementById('f-description').value.trim() || null,
+    teacherId: document.getElementById('f-teacher').value ? Number(document.getElementById('f-teacher').value) : null,
+    weekdays: days,
+    startTime: document.getElementById('f-start').value || null,
+    endTime: document.getElementById('f-end').value || null,
+    room: document.getElementById('f-room').value.trim() || null,
+    capacity: capacity ? Number(capacity) : null
+  };
+}
+
+function setForm(c) {
+  document.getElementById('f-name').value = c.name || '';
+  document.getElementById('f-description').value = c.description || '';
+  document.getElementById('f-start').value = c.startTime || '';
+  document.getElementById('f-end').value = c.endTime || '';
+  document.getElementById('f-room').value = c.room || '';
+  document.getElementById('f-capacity').value = c.capacity ?? '';
+  (c.weekdays || []).forEach(d => {
+    const el = document.querySelector(`#f-days input[value="${d}"]`);
+    if (el) el.checked = true;
+  });
+}
+
+async function save() {
+  const body = getForm();
+  if (!body.name) { alert('반 이름을 입력하세요.'); return; }
+  if (!body.teacherId) { alert('담당 강사를 선택하세요.'); return; }
+  const path = classId ? `/1/classes/${classId}` : `/1/classes`;
+  const res = classId ? await apiPut(path, body) : await apiPost(path, body);
+  if (!res.ok) {
+    const msg = await res.text();
+    alert('저장 실패: ' + msg);
+    return;
+  }
+  const saved = await res.json();
+  location.href = `CLS-03-class-detail.html?id=${saved.id}`;
+}
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+
+(async function init() {
+  if (classId) {
+    document.getElementById('title').textContent = '반 수정';
+    document.getElementById('btn-save').textContent = '저장';
+    const res = await apiGet(`/1/classes/${classId}`);
+    const c = await res.json();
+    await loadTeachers(c.teacherId);
+    setForm(c);
+  } else {
+    await loadTeachers(null);
+  }
+})();
+</script>
+</body>
+</html>

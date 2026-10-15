@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AcademyCraft - 사용자·권한 관리 - ADM-02</title>
+<style>
+  /* 최소 기능 UI. 디자인 차별화는 2차. 업무 로직과 분리. */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, sans-serif; background: #f5f5f5; padding: 16px; }
+  .header { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+  .header h1 { font-size: 20px; }
+  .nav { margin-bottom: 16px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn { padding: 12px 20px; background: #0066cc; color: #fff; border: none;
+         border-radius: 8px; cursor: pointer; font-size: 15px; }
+  .btn-sm { padding: 6px 12px; font-size: 13px; text-decoration: none; display: inline-block; }
+  .btn-ghost { background: #fff; color: #0066cc; border: 1px solid #0066cc; }
+  .msg { padding: 10px; border-radius: 8px; margin-bottom: 12px; display: none; }
+  .msg.ok { display: block; background: #e6f4ea; color: #1a7f37; }
+  .msg.err { display: block; background: #fce8e6; color: #c5221f; }
+  .panel { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+  .panel h2 { font-size: 16px; margin-bottom: 12px; }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 13px; color: #555; margin-bottom: 4px; }
+  .field input, .field select { width: 100%; padding: 10px; font-size: 15px;
+    border: 1px solid #ccc; border-radius: 8px; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+  .tab { padding: 8px 16px; border-radius: 20px; border: 1px solid #0066cc;
+    background: #fff; color: #0066cc; font-size: 14px; cursor: pointer; }
+  .tab.active { background: #0066cc; color: #fff; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { padding: 10px 8px; border-bottom: 1px solid #eee; text-align: left; }
+  th { color: #666; font-weight: normal; font-size: 13px; }
+  .badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 10px;
+    background: #e8f0fe; color: #1a73e8; }
+  .badge.ok { background: #e6f4ea; color: #1a7f37; }
+  .badge.warn { background: #fef7e0; color: #b06000; }
+  .hint { font-size: 12px; color: #888; }
+  .role-form { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-top: 12px; }
+  @media (max-width: 600px) {
+    .role-form { grid-template-columns: 1fr; }
+    .btn { width: 100%; }
+    table { font-size: 13px; }
+    th:nth-child(3), td:nth-child(3) { display: none; }
+  }
+  @media (max-width: 480px) {
+    button, .btn { min-height: 44px; }
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+    select, textarea { min-height: 44px; font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>사용자·권한 관리</h1>
+  <p style="color:#666;font-size:13px;margin-top:4px;">REA 8단계 구현 - ADM-02 · 원장·강사·학부모 역할 관리</p>
+</div>
+
+<div class="nav">
+  <a href="ADM-01-academy-info.html" class="btn btn-ghost btn-sm">학원 정보</a>
+  <a href="ADM-02-user-roles.html" class="btn btn-sm">사용자·권한</a>
+  <a href="ADM-03-audit-log.html" class="btn btn-ghost btn-sm">변경 이력</a>
+  <a href="OPS-02-dashboard.html" class="btn btn-ghost btn-sm">대시보드</a>
+</div>
+
+<div class="msg" id="msg"></div>
+
+<div class="panel">
+  <div class="field">
+    <label>학원 ID</label>
+    <input type="number" id="f-academy-id" value="1" min="1" style="max-width:200px;">
+  </div>
+  <div class="tabs" id="role-tabs">
+    <button class="tab active" data-role="">전체 (원장·강사)</button>
+    <button class="tab" data-role="OWNER">원장</button>
+    <button class="tab" data-role="TEACHER">강사</button>
+    <button class="tab" data-role="PARENT">학부모 연결</button>
+  </div>
+  <div id="staff-wrap">
+    <table>
+      <thead><tr><th>이름</th><th>역할</th><th>연락처</th><th>ID</th></tr></thead>
+      <tbody id="staff-body"><tr><td colspan="4" class="hint">불러오는 중...</td></tr></tbody>
+    </table>
+  </div>
+  <div id="parent-wrap" style="display:none;">
+    <table>
+      <thead><tr><th>학생</th><th>학부모</th><th>연락처</th><th>연결</th></tr></thead>
+      <tbody id="parent-body"></tbody>
+    </table>
+    <p class="hint" style="margin-top:8px;">학부모는 별도 회원가입 없이 학생 인증키로 로그인합니다. 성명이 등록된 학생이 '연결됨' 상태입니다.</p>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>권한 변경 (원장만)</h2>
+  <p class="hint" style="margin-bottom:8px;">원장 교체는 "후임 승격 → 전임 강등" 2단계로 수행하세요. 마지막 원장은 강등할 수 없습니다.</p>
+  <div class="role-form">
+    <div class="field">
+      <label>대상 회원 ID</label>
+      <input type="number" id="r-member-id" placeholder="예: 3">
+    </div>
+    <div class="field">
+      <label>변경할 역할</label>
+      <select id="r-role">
+        <option value="TEACHER">강사</option>
+        <option value="OWNER">원장</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>요청자(원장) 회원 ID</label>
+      <input type="number" id="r-actor-id" placeholder="예: 1">
+    </div>
+  </div>
+  <button class="btn" onclick="changeRole()">권한 변경</button>
+</div>
+
+<script src="../components/api-client.js"></script>
+<script>
+let currentRole = '';
+
+function academyId() {
+  return document.getElementById('f-academy-id').value || '1';
+}
+
+function showMsg(text, ok) {
+  const el = document.getElementById('msg');
+  el.textContent = text;
+  el.className = 'msg ' + (ok ? 'ok' : 'err');
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+document.getElementById('role-tabs').addEventListener('click', (e) => {
+  const btn = e.target.closest('.tab');
+  if (!btn) return;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  currentRole = btn.dataset.role;
+  loadUsers();
+});
+
+async function loadUsers() {
+  const id = academyId();
+  const q = currentRole ? `?role=${currentRole}` : '';
+  try {
+    const res = await apiGet(`/${id}/users${q}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || '조회 실패');
+
+    const isParent = currentRole === 'PARENT';
+    document.getElementById('staff-wrap').style.display = isParent ? 'none' : '';
+    document.getElementById('parent-wrap').style.display = isParent ? '' : 'none';
+
+    if (isParent) {
+      const tb = document.getElementById('parent-body');
+      if (!data.parents.length) {
+        tb.innerHTML = '<tr><td colspan="4" class="hint">등록된 학생이 없습니다.</td></tr>';
+        return;
+      }
+      tb.innerHTML = data.parents.map(p =>
+        `<tr><td>${escapeHtml(p.studentName)}<span class="hint"> (${escapeHtml(p.grade || '')})</span></td>` +
+        `<td>${escapeHtml(p.parentName || '-')}</td>` +
+        `<td>${escapeHtml(p.parentPhone || '-')}</td>` +
+        `<td>${p.connected
+          ? '<span class="badge ok">연결됨</span>'
+          : '<span class="badge warn">미등록</span>'}</td></tr>`
+      ).join('');
+      return;
+    }
+
+    const tb = document.getElementById('staff-body');
+    if (!data.staff.length) {
+      tb.innerHTML = '<tr><td colspan="4" class="hint">등록된 사용자가 없습니다.</td></tr>';
+      return;
+    }
+    tb.innerHTML = data.staff.map(m =>
+      `<tr><td><strong>${escapeHtml(m.name)}</strong></td>` +
+      `<td><span class="badge">${escapeHtml(m.roleLabel)}</span></td>` +
+      `<td>${escapeHtml(m.phone || '-')}</td>` +
+      `<td class="hint">${m.id}</td></tr>`
+    ).join('');
+  } catch (e) {
+    showMsg(e.message || '서버 연결 실패', false);
+  }
+}
+
+async function changeRole() {
+  const id = academyId();
+  const memberId = document.getElementById('r-member-id').value;
+  const role = document.getElementById('r-role').value;
+  const actorId = document.getElementById('r-actor-id').value;
+  if (!memberId || !actorId) {
+    showMsg('대상 회원 ID와 요청자(원장) 회원 ID를 입력하세요.', false);
+    return;
+  }
+  try {
+    const res = await apiPut(`/${id}/users/${memberId}/role`, { role: role, actorMemberId: Number(actorId) });
+    const data = await res.json();
+    if (!res.ok) {
+      showMsg(data.message || '권한 변경 실패', false);
+      return;
+    }
+    showMsg(`${data.name}님의 역할이 ${data.roleLabel}(으)로 변경되었습니다.`, true);
+    loadUsers();
+  } catch (e) {
+    showMsg('서버 연결 실패', false);
+  }
+}
+
+document.getElementById('f-academy-id').addEventListener('change', loadUsers);
+loadUsers();
+</script>
+</body>
+</html>

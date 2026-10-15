@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AcademyCraft - 대화 상세 - CNS-05</title>
+<style>
+  /* 최소 기능 UI. 디자인 차별화는 2차. 업무 로직과 분리. */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, sans-serif; background: #f5f5f5; padding: 16px; }
+  .header { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+  .header h1 { font-size: 20px; }
+  .login { background: #fff; padding: 14px; border-radius: 8px; margin-bottom: 16px;
+           display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .login input { padding: 10px; border: 1px solid #ddd; border-radius: 8px; flex: 1; min-width: 140px; }
+  .login button, .btn { padding: 10px 16px; background: #0066cc; color: #fff; border: none;
+                        border-radius: 8px; cursor: pointer; }
+  .btn-sm { padding: 6px 12px; font-size: 13px; }
+  .btn-ghost { background: #fff; color: #0066cc; border: 1px solid #0066cc; }
+  .btn-danger { background: #c5221f; }
+  .tag { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px;
+         font-weight: bold; margin-right: 6px; }
+  .tag-INQUIRY { background: #e8f0fe; color: #1a56db; }
+  .tag-NEWS { background: #f3e8fd; color: #681da8; }
+  .st-OPEN { background: #fef7e0; color: #b06000; }
+  .st-ANSWERED { background: #e6f4ea; color: #1a7f37; }
+  .st-CLOSED { background: #f1f3f4; color: #666; }
+  .thread { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 12px; }
+  .bubble { padding: 10px 12px; border-radius: 12px; margin-bottom: 8px; max-width: 85%;
+            font-size: 14px; white-space: pre-wrap; }
+  .bubble .who { font-size: 11px; color: #888; margin-bottom: 4px; }
+  .bubble.mine { background: #d2e3fc; margin-left: auto; }
+  .bubble.theirs { background: #fff; margin-right: auto; border: 1px solid #eee; }
+  .bubble .readline { font-size: 11px; color: #888; margin-top: 6px;
+                      display: flex; justify-content: space-between; align-items: center; }
+  .bubble .unread { color: #c5221f; }
+  .reply { background: #fff; padding: 14px; border-radius: 8px; margin-top: 12px; }
+  .reply textarea { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px;
+                    min-height: 70px; resize: vertical; }
+  .reply .row { display: flex; gap: 8px; margin-top: 10px; }
+  .msg { padding: 10px; border-radius: 8px; margin-bottom: 12px; display: none; }
+  .msg.ok { display: block; background: #e6f4ea; color: #1a7f37; }
+  .msg.err { display: block; background: #fce8e6; color: #c5221f; }
+  .role-pick { display: flex; gap: 12px; font-size: 14px; }
+  @media (max-width: 600px) {
+    .login { flex-direction: column; align-items: stretch; }
+  }
+
+  /* [Phase5-Task4] 모바일 터치 영역 보강 (480px 이하) */
+  @media (max-width: 480px) {
+    button, .btn { min-height: 44px; }
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+    select, textarea { min-height: 44px; font-size: 16px; }
+    input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-width: 0; flex: none; accent-color: #0066cc; }
+
+    .role-pick label { padding: 12px 8px; }  }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>대화 상세</h1>
+  <p style="color:#666;font-size:13px;margin-top:4px;">REA 5단계 구현 - CNS-05 · 1:1 상담 스레드</p>
+</div>
+
+<div class="login">
+  <input id="thread-id" placeholder="스레드 ID">
+  <div class="role-pick">
+    <label><input type="radio" name="role" value="parent" checked> 학부모</label>
+    <label><input type="radio" name="role" value="staff"> 원장·강사</label>
+  </div>
+  <input id="viewer-key" placeholder="학생 인증키 (학부모)">
+  <button onclick="loadThread()">조회</button>
+</div>
+
+<div class="msg" id="msg"></div>
+
+<div id="thread" style="display:none">
+  <div class="thread">
+    <div style="font-weight:bold;font-size:16px;margin-bottom:6px" id="t-title"></div>
+    <div style="color:#666;font-size:12px" id="t-meta"></div>
+    <div style="margin-top:8px">
+      <button class="btn btn-sm btn-danger" id="close-btn" onclick="closeThread()">상담 종료</button>
+    </div>
+  </div>
+  <div id="msgs"></div>
+  <div class="reply" id="reply-box">
+    <textarea id="reply-text" placeholder="메시지 입력"></textarea>
+    <div class="row">
+      <button class="btn" style="flex:1" onclick="sendMessage()">전송</button>
+    </div>
+  </div>
+</div>
+
+<script src="../components/api-client.js"></script>
+<script>
+var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+let threadId = null;
+let viewer = null; // {kind:'parent'|'staff', key:...}
+
+function showMsg(text, ok) {
+  const m = document.getElementById('msg');
+  m.className = 'msg ' + (ok ? 'ok' : 'err');
+  m.textContent = text;
+}
+
+function role() {
+  return document.querySelector('input[name=role]:checked').value;
+}
+
+document.querySelectorAll('input[name=role]').forEach(r =>
+  r.addEventListener('change', () => {
+    document.getElementById('viewer-key').placeholder =
+      role() === 'parent' ? '학생 인증키 (학부모)' : '내 회원 ID (원장·강사)';
+  }));
+
+function viewerParams() {
+  // 상세 조회용 쿼리 파라미터
+  return role() === 'parent'
+    ? { authKey: viewer.key }
+    : {};
+}
+
+function viewerBody() {
+  // 메시지 작성·읽음·종료용 body 식별자
+  return role() === 'parent'
+    ? { authKey: viewer.key }
+    : { memberId: Number(viewer.key) };
+}
+
+async function loadThread() {
+  const id = document.getElementById('thread-id').value.trim();
+  const key = document.getElementById('viewer-key').value.trim();
+  if (!id) { showMsg('스레드 ID를 입력하세요.', false); return; }
+  if (!key) { showMsg(role() === 'parent' ? '학생 인증키를 입력하세요.' : '내 회원 ID를 입력하세요.', false); return; }
+  threadId = id;
+  viewer = { kind: role(), key };
+  await refresh();
+}
+
+function viewerHeaderKey() {
+  // 학부모: 입력받은 학생 인증키를 X-Auth-Key 헤더로 전송.
+  // 원장·강사: localStorage 로그인 키 사용 (입력값은 회원 ID이므로 헤더에 쓰지 않음).
+  return (viewer && viewer.kind === 'parent') ? viewer.key : undefined;
+}
+
+async function refresh() {
+  const q = viewerParams();
+  // 학생 인증키는 URL 파라미터에 포함하지 않고 X-Auth-Key 헤더로만 전송
+  const res = await apiGet(`/1/consultations/${threadId}`, q.authKey || undefined);
+  const c = await res.json();
+  if (!res.ok) { showMsg(c.message || '조회 실패', false); return; }
+  document.getElementById('thread').style.display = 'block';
+  document.getElementById('t-title').textContent = c.title;
+  document.getElementById('t-meta').innerHTML =
+    `<span class="tag tag-${c.type}">${escapeHtml(c.typeLabel)}</span>` +
+    `<span class="tag st-${c.status}">${escapeHtml(c.statusLabel)}</span>` +
+    `${escapeHtml(c.studentName)} 학부모 · ${c.messageCount}개 메시지`;
+  document.getElementById('close-btn').style.display =
+    c.status === 'CLOSED' ? 'none' : 'inline-block';
+  document.getElementById('reply-box').style.display =
+    c.status === 'CLOSED' ? 'none' : 'block';
+
+  const box = document.getElementById('msgs');
+  box.innerHTML = '';
+  c.messages.forEach(m => {
+    const mine = (viewer.kind === 'parent' && m.senderKind === 'PARENT') ||
+                 (viewer.kind === 'staff' && m.senderKind === 'STAFF');
+    const b = document.createElement('div');
+    b.className = 'bubble ' + (mine ? 'mine' : 'theirs');
+    b.innerHTML = `<div class="who">${escapeHtml(m.senderName)} · ${formatDt(m.createdAt)}</div>` +
+      escapeHtml(m.content) +
+      (m.attachmentFileName ? `<div class="who">첨부: ${escapeHtml(m.attachmentFileName)}</div>` : '') +
+      `<div class="readline">` +
+        (m.read
+          ? `<span>읽음 ${formatDt(m.readAt)}</span>`
+          : `<span class="unread">안읽음</span>` +
+            (!mine ? `<button class="btn btn-sm btn-ghost" onclick="markRead(${m.id})">읽음 처리</button>` : '')) +
+      `</div>`;
+    box.appendChild(b);
+  });
+}
+
+async function sendMessage() {
+  const content = document.getElementById('reply-text').value.trim();
+  if (!content) { showMsg('메시지를 입력하세요.', false); return; }
+  const res = await apiPost(`/1/consultations/${threadId}/messages`,
+    Object.assign({ content }, viewerBody()), viewerHeaderKey());
+  const data = await res.json();
+  if (!res.ok) { showMsg(data.message || '전송 실패', false); return; }
+  const note = viewer.kind === 'staff'
+    ? (data.notificationSentCount > 0 ? ' (학부모 알림 발송됨)'
+      : data.notificationSkippedCount > 0 ? ' (학부모 알림 OFF로 생략)'
+      : data.notificationError ? ' (알림 발송 오류)' : '')
+    : '';
+  showMsg('메시지를 전송했습니다.' + note, true);
+  document.getElementById('reply-text').value = '';
+  await refresh();
+}
+
+async function markRead(messageId) {
+  const res = await apiPost(`/1/consultations/${threadId}/messages/${messageId}/read`,
+    viewerBody(), viewerHeaderKey());
+  const data = await res.json();
+  if (!res.ok) { showMsg(data.message || '읽음 처리 실패', false); return; }
+  await refresh();
+}
+
+async function closeThread() {
+  if (!confirm('상담을 종료하시겠습니까? 종료 후에는 메시지를 작성할 수 없습니다.')) return;
+  const res = await apiPost(`/1/consultations/${threadId}/close`,
+    viewerBody(), viewerHeaderKey());
+  const data = await res.json();
+  if (!res.ok) { showMsg(data.message || '종료 실패', false); return; }
+  showMsg('상담이 종료되었습니다.', true);
+  await refresh();
+}
+
+// URL 파라미터 지원 (?id= — 구버전 ?authKey= 링크도 읽어서 입력칸에 채움)
+// 보안상 인증키는 URL으로 전달하지 않으므로, 새 링크에는 authKey를 포함하지 않는다.
+(function init() {
+  const p = new URLSearchParams(location.search);
+  if (p.get('id')) document.getElementById('thread-id').value = p.get('id');
+  if (p.get('authKey')) {
+    document.getElementById('viewer-key').value = p.get('authKey');
+    loadThread();
+  }
+})();
+
+function formatDt(s) {
+  if (!s) return '';
+  return s.replace('T', ' ').slice(0, 16);
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+</script>
+</body>
+</html>

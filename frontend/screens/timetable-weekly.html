@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AcademyCraft - 주간 시간표</title>
+<style>
+  /* 최소 기능 UI. 디자인 차별화는 2차. 업무 로직과 분리. */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, sans-serif; background: #f5f5f5; padding: 16px; }
+  .header { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+  .header h1 { font-size: 20px; }
+  .nav { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .nav a { font-size: 13px; color: #0066cc; text-decoration: none; padding: 6px 10px; border: 1px solid #cfe0f5; border-radius: 6px; background: #f0f6ff; }
+  .week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; }
+  .day { background: #fff; border-radius: 8px; padding: 12px; min-height: 160px; }
+  .day h3 { font-size: 14px; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 2px solid #0066cc; }
+  .entry { background: #f0f6ff; border-left: 3px solid #0066cc; border-radius: 4px; padding: 8px; margin-bottom: 8px; font-size: 13px; cursor: pointer; }
+  .entry:hover { background: #e2eefe; }
+  .entry .time { font-weight: bold; color: #0066cc; }
+  .entry .cname { font-weight: bold; margin: 2px 0; }
+  .entry .sub { color: #666; font-size: 12px; }
+  .empty { color: #bbb; font-size: 12px; }
+  @media (max-width: 900px) {
+    .week { grid-template-columns: 1fr; }
+    .day { min-height: auto; }
+  }
+  @media (max-width: 480px) {
+    button, .btn { min-height: 44px; }
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+    select, textarea { min-height: 44px; font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>주간 시간표</h1>
+  <p style="color:#666;font-size:13px;margin-top:4px;">REA 1차 구현 - 반별 수업 요일·시간</p>
+  <div class="nav">
+    <a href="CLS-01-class-list.html">반 목록</a>
+    <a href="timetable-weekly.html">주간 시간표</a>
+    <a href="MBR-01-student-list.html">학생 관리</a>
+  </div>
+</div>
+
+<div class="week" id="week"></div>
+
+<script src="../components/api-client.js"></script>
+<script>
+var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+const DAYS = [
+  { code: 'MON', label: '월요일' },
+  { code: 'TUE', label: '화요일' },
+  { code: 'WED', label: '수요일' },
+  { code: 'THU', label: '목요일' },
+  { code: 'FRI', label: '금요일' },
+  { code: 'SAT', label: '토요일' },
+  { code: 'SUN', label: '일요일' }
+];
+
+async function loadTimetable() {
+  const res = await apiGet(`/1/timetable/weekly`);
+  const entries = await res.json();
+  const byDay = {};
+  DAYS.forEach(d => byDay[d.code] = []);
+  entries.forEach(e => { if (byDay[e.dayOfWeek]) byDay[e.dayOfWeek].push(e); });
+
+  document.getElementById('week').innerHTML = DAYS.map(d => `
+    <div class="day">
+      <h3>${d.label}</h3>
+      ${byDay[d.code].map(e => `
+        <div class="entry" onclick="location.href='CLS-03-class-detail.html?id=${e.classId}'" title="반 상세로 이동">
+          <div class="time">${escapeHtml(e.startTime || '')}${e.endTime ? '~' + escapeHtml(e.endTime) : ''}</div>
+          <div class="cname">${escapeHtml(e.className)}</div>
+          <div class="sub">${escapeHtml(e.room || '')} ${escapeHtml(e.teacherName || '')} · ${e.studentCount}명</div>
+        </div>
+      `).join('') || '<div class="empty">수업 없음</div>'}
+    </div>
+  `).join('');
+}
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+
+loadTimetable();
+</script>
+</body>
+</html>

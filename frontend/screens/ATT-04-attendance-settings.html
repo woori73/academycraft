@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AcademyCraft - 출결 설정 - ATT-04</title>
+<style>
+  /* 최소 기능 UI. 디자인 차별화는 2차. 업무 로직과 분리. */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, sans-serif; background: #f5f5f5; padding: 16px;
+         max-width: 560px; margin: 0 auto; }
+  .header { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+  .header h1 { font-size: 20px; }
+  .form { background: #fff; padding: 20px; border-radius: 8px; }
+  .row { margin-bottom: 18px; }
+  .row label { display: block; font-weight: bold; font-size: 14px; margin-bottom: 6px; }
+  .row .desc { font-size: 12px; color: #888; margin-top: 4px; }
+  .row input[type="time"], .row input[type="text"] {
+    width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 15px; }
+  .time-row { display: flex; gap: 8px; align-items: center; }
+  .time-row input { flex: 1; }
+  .switch-row { display: flex; justify-content: space-between; align-items: center; }
+  .switch-row input { width: 22px; height: 22px; }
+  .save { width: 100%; padding: 14px; background: #0066cc; color: #fff; border: none;
+          border-radius: 8px; font-size: 16px; cursor: pointer; }
+  #msg { text-align: center; margin-top: 12px; font-size: 14px; min-height: 20px; }
+  #msg.ok { color: #1a7f37; }
+  #msg.err { color: #c5221f; }
+
+  /* [Phase5-Task4] 모바일 터치 영역 보강 (480px 이하) */
+  @media (max-width: 480px) {
+    button, .btn { min-height: 44px; }
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+    select, textarea { min-height: 44px; font-size: 16px; }
+    input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-width: 0; flex: none; accent-color: #0066cc; }
+    label[for="f-photo"] { display: inline-block; padding: 12px 0; }
+  }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>출결 설정</h1>
+  <p style="color:#666;font-size:13px;margin-top:4px;">REA 2단계 구현 - ATT-04 · 원장 전용</p>
+</div>
+
+<div class="form">
+  <div class="row">
+    <label>하원 가능 시간</label>
+    <div class="time-row">
+      <input type="time" id="f-earliest" value="">
+      <span>~</span>
+      <input type="time" id="f-latest" value="">
+    </div>
+    <div class="desc">시작 시각 이전에는 하원 기록이 거부됩니다. 비워 두면 제한 없음.</div>
+  </div>
+
+  <div class="row switch-row">
+    <div>
+      <label style="margin-bottom:0;" for="f-photo">출결 사진 전송</label>
+      <div class="desc">등·하원 시 사진 첨부 (2단계: 설정값만 저장)</div>
+    </div>
+    <input type="checkbox" id="f-photo">
+  </div>
+
+  <div class="row">
+    <label>등원 알림 문구</label>
+    <input type="text" id="f-in-msg" maxlength="200" placeholder="{name}님이 등원했습니다.">
+    <div class="desc">{name} = 학생 이름 자리표시자. 3단계 알림 발송 시 사용.</div>
+  </div>
+
+  <div class="row">
+    <label>하원 알림 문구</label>
+    <input type="text" id="f-out-msg" maxlength="200" placeholder="{name}님이 하원했습니다.">
+    <div class="desc">{name} = 학생 이름 자리표시자. 3단계 알림 발송 시 사용.</div>
+  </div>
+
+  <button class="save" onclick="saveSettings()">저장</button>
+  <div id="msg"></div>
+</div>
+
+<script src="../components/api-client.js"></script>
+<script>
+var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+
+loadSettings();
+
+async function loadSettings() {
+  const res = await apiGet(`/1/attendance/settings`);
+  const s = await res.json();
+  if (!res.ok) return;
+  document.getElementById('f-earliest').value = s.checkOutEarliestTime || '';
+  document.getElementById('f-latest').value = s.checkOutLatestTime || '';
+  document.getElementById('f-photo').checked = !!s.photoEnabled;
+  document.getElementById('f-in-msg').value = s.checkInMessage || '';
+  document.getElementById('f-out-msg').value = s.checkOutMessage || '';
+}
+
+async function saveSettings() {
+  const msg = document.getElementById('msg');
+  const body = {
+    checkOutEarliestTime: document.getElementById('f-earliest').value || '',
+    checkOutLatestTime: document.getElementById('f-latest').value || '',
+    photoEnabled: document.getElementById('f-photo').checked,
+    checkInMessage: document.getElementById('f-in-msg').value || null,
+    checkOutMessage: document.getElementById('f-out-msg').value || null
+  };
+  try {
+    const res = await apiPut(`/1/attendance/settings`, body);
+    const data = await res.json();
+    if (!res.ok) {
+      msg.className = 'err';
+      msg.textContent = data.message || '저장 실패';
+      return;
+    }
+    msg.className = 'ok';
+    msg.textContent = '저장되었습니다.';
+  } catch (e) {
+    msg.className = 'err';
+    msg.textContent = '서버 연결 실패';
+  }
+}
+</script>
+</body>
+</html>

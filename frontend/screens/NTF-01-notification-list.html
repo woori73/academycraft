@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AcademyCraft - 알림 목록 - NTF-01</title>
+<style>
+  /* 최소 기능 UI. 디자인 차별화는 2차. 업무 로직과 분리. */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, sans-serif; background: #f5f5f5; padding: 16px; }
+  .header { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+  .header h1 { font-size: 20px; }
+  .header h1 .badge { display: inline-block; background: #c5221f; color: #fff; font-size: 12px;
+                      border-radius: 10px; padding: 2px 8px; margin-left: 6px; vertical-align: middle; }
+  .login { background: #fff; padding: 14px; border-radius: 8px; margin-bottom: 16px;
+           display: flex; gap: 8px; flex-wrap: wrap; }
+  .login input { padding: 10px; border: 1px solid #ddd; border-radius: 8px; flex: 1; min-width: 180px; }
+  .login button, .btn { padding: 10px 16px; background: #0066cc; color: #fff; border: none;
+                        border-radius: 8px; cursor: pointer; }
+  .btn-sm { padding: 6px 12px; font-size: 13px; }
+  .btn-ghost { background: #fff; color: #0066cc; border: 1px solid #0066cc; }
+  .card { background: #fff; padding: 14px; border-radius: 8px; margin-bottom: 8px; }
+  .card.unread { border-left: 4px solid #0066cc; }
+  .card .ttl { font-weight: bold; font-size: 15px; margin-bottom: 4px; }
+  .card .meta { color: #666; font-size: 12px; margin-bottom: 6px; }
+  .card .body { font-size: 14px; color: #333; white-space: pre-wrap; }
+  .tag { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px;
+         font-weight: bold; margin-right: 6px; }
+  .tag-CHECK_IN { background: #e6f4ea; color: #1a7f37; }
+  .tag-CHECK_OUT { background: #e8f0fe; color: #1a56db; }
+  .tag-NOTICE { background: #fef7e0; color: #b06000; }
+  .tag-CONSULT_REPLY { background: #f3e8fd; color: #681da8; }
+  .tag-GRADE { background: #e8f0fe; color: #1a56db; }
+  .tag-HOMEWORK { background: #fce8e6; color: #c5221f; }
+  .sec { background: #fff; padding: 14px; border-radius: 8px; margin-top: 16px; }
+  .sec h2 { font-size: 16px; margin-bottom: 10px; }
+  .set-row { display: flex; justify-content: space-between; align-items: center;
+             padding: 8px 0; border-bottom: 1px solid #eee; }
+  .set-row:last-child { border-bottom: none; }
+  .msg { padding: 10px; border-radius: 8px; margin-bottom: 12px; display: none; }
+  .msg.ok { display: block; background: #e6f4ea; color: #1a7f37; }
+  .msg.err { display: block; background: #fce8e6; color: #c5221f; }
+  @media (max-width: 600px) {
+    .login { flex-direction: column; }
+  }
+  @media (max-width: 480px) {
+    button, .btn { min-height: 44px; }
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+    select, textarea { min-height: 44px; font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>알림 목록 <span class="badge" id="unread-badge" style="display:none"></span></h1>
+  <p style="color:#666;font-size:13px;margin-top:4px;">REA 3단계 구현 - NTF-01 · 수신한 알림 · 읽음 처리 · 알림 설정</p>
+</div>
+
+<div class="login">
+  <input id="authkey" placeholder="학생 인증키 입력 (학부모 로그인)">
+  <button onclick="loadAll()">조회</button>
+</div>
+
+<div class="msg" id="msg"></div>
+<div id="list"></div>
+
+<div class="sec" id="settings-sec" style="display:none">
+  <h2>알림 설정 (종류별 ON/OFF)</h2>
+  <div id="settings"></div>
+  <button class="btn btn-sm" style="margin-top:10px" onclick="saveSettings()">설정 저장</button>
+</div>
+
+<script src="../components/api-client.js"></script>
+<script>
+var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+let settingsCache = [];
+
+function showMsg(text, ok) {
+  const m = document.getElementById('msg');
+  m.className = 'msg ' + (ok ? 'ok' : 'err');
+  m.textContent = text;
+}
+
+function authKey() {
+  const v = document.getElementById('authkey').value.trim();
+  if (!v) { showMsg('학생 인증키를 입력하세요.', false); return null; }
+  return v;
+}
+
+async function loadAll() {
+  const key = authKey();
+  if (!key) return;
+  await Promise.all([loadList(key), loadUnread(key), loadSettings(key)]);
+}
+
+async function loadList(key) {
+  // 학생 인증키는 URL 파라미터에 포함하지 않고 X-Auth-Key 헤더로만 전송
+  const res = await apiGet(`/1/notifications`, key);
+  const data = await res.json();
+  if (!res.ok) { showMsg(data.message || '조회 실패', false); return; }
+  const list = document.getElementById('list');
+  list.innerHTML = '';
+  if (data.length === 0) {
+    list.innerHTML = '<div class="card"><div class="body">받은 알림이 없습니다.</div></div>';
+    return;
+  }
+  data.forEach(n => {
+    const d = document.createElement('div');
+    d.className = 'card' + (n.read ? '' : ' unread');
+    d.innerHTML =
+      `<div class="ttl">${escapeHtml(n.title)}</div>` +
+      `<div class="meta"><span class="tag tag-${n.type}">${escapeHtml(n.typeLabel)}</span>` +
+      `${n.channel} · ${formatDt(n.createdAt)} · ${n.read ? '읽음' : '안읽음'}</div>` +
+      `<div class="body">${escapeHtml(n.content)}</div>` +
+      (n.read ? '' : `<div style="margin-top:8px"><button class="btn btn-sm btn-ghost" onclick="markRead(${n.id})">읽음 처리</button></div>`);
+    list.appendChild(d);
+  });
+}
+
+async function loadUnread(key) {
+  const res = await apiGet(`/1/notifications/unread-count`, key);
+  if (!res.ok) return;
+  const data = await res.json();
+  const badge = document.getElementById('unread-badge');
+  if (data.unreadCount > 0) {
+    badge.style.display = 'inline-block';
+    badge.textContent = data.unreadCount;
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+async function markRead(id) {
+  const key = authKey();
+  if (!key) return;
+  // body 의 authKey 는 백엔드 ReadRequest 식별용으로 유지 (헤더에도 동일 키 전송)
+  const res = await apiPost(`/1/notifications/${id}/read`, { authKey: key }, key);
+  const data = await res.json();
+  if (!res.ok) { showMsg(data.message || '읽음 처리 실패', false); return; }
+  await loadAll();
+}
+
+async function loadSettings(key) {
+  const res = await apiGet(`/1/notifications/settings`, key);
+  const data = await res.json();
+  if (!res.ok) return;
+  settingsCache = data.settings;
+  const box = document.getElementById('settings');
+  box.innerHTML = '';
+  data.settings.forEach(s => {
+    const row = document.createElement('div');
+    row.className = 'set-row';
+    row.innerHTML =
+      `<span>${escapeHtml(s.typeLabel)}</span>` +
+      `<input type="checkbox" data-type="${s.type}" ${s.enabled ? 'checked' : ''} style="width:20px;height:20px">`;
+    box.appendChild(row);
+  });
+  document.getElementById('settings-sec').style.display = 'block';
+}
+
+async function saveSettings() {
+  const key = authKey();
+  if (!key) return;
+  const settings = [];
+  document.querySelectorAll('#settings input[type=checkbox]').forEach(cb => {
+    settings.push({ type: cb.dataset.type, enabled: cb.checked });
+  });
+  const res = await apiPut(`/1/notifications/settings`, { authKey: key, settings }, key);
+  const data = await res.json();
+  if (!res.ok) { showMsg(data.message || '설정 저장 실패', false); return; }
+  showMsg('알림 설정이 저장되었습니다.', true);
+}
+
+function formatDt(s) {
+  if (!s) return '';
+  return s.replace('T', ' ').slice(0, 16);
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+</script>
+</body>
+</html>

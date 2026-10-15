@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AcademyCraft - 인증키 로그인 - MBR-07</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, sans-serif; background: #f5f5f5;
+         min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+  .card { background: #fff; border-radius: 12px; padding: 28px; width: 92%;
+          max-width: 420px; box-shadow: 0 2px 12px rgba(0,0,0,.08); }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .sub { font-size: 13px; color: #666; margin-bottom: 18px; }
+  label { display: block; font-size: 13px; color: #555; margin: 12px 0 6px; }
+  input { width: 100%; padding: 12px; font-size: 15px; border: 1px solid #ccc;
+          border-radius: 8px; }
+  .btn { width: 100%; margin-top: 16px; padding: 13px; background: #0066cc;
+         color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 16px; }
+  .btn:disabled { background: #9ec1e8; cursor: default; }
+  .msg { margin-top: 12px; font-size: 14px; min-height: 20px; }
+  .msg.err { color: #c5221f; }
+  .msg.ok { color: #1a7f37; }
+  .who { margin-top: 12px; font-size: 14px; background: #f0f4f8; border-radius: 8px;
+         padding: 10px 12px; display: none; }
+  .links { margin-top: 14px; font-size: 13px; display: none; }
+  .links a { color: #0066cc; margin-right: 10px; }
+  .hint { margin-top: 14px; font-size: 12px; color: #888; }
+  @media (max-width: 480px) {
+    button, .btn { min-height: 44px; }
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+    select, textarea { min-height: 44px; font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>🔑 인증키 로그인</h1>
+  <div class="sub">AcademyCraft · 원장 / 강사 / 학부모(학생 인증키)</div>
+  <label for="authkey">인증키</label>
+  <input type="password" id="authkey" placeholder="발급받은 인증키 입력" autocomplete="off"
+    onkeydown="if(event.key==='Enter')doLogin()">
+  <button class="btn" id="loginBtn" onclick="doLogin()">로그인</button>
+  <div class="msg" id="msg"></div>
+  <div class="who" id="who"></div>
+  <div class="links" id="links">
+    <a href="OPS-02-dashboard.html">대시보드</a>
+    <a href="MBR-01-student-list.html">학생 관리</a>
+    <a href="CHAT-01-ai-chat.html">AI 학원 비서</a>
+  </div>
+  <div class="hint">인증키는 이 브라우저의 localStorage('rea_auth_key')에만 저장됩니다.
+    로그아웃하려면 브라우저 저장소를 비우거나 아래 버튼을 누르세요.</div>
+  <button class="btn" style="background:#888;margin-top:8px" onclick="doLogout()">로그아웃 (키 삭제)</button>
+</div>
+
+<!--
+  주의: key-login(POST /api/rea/auth/key-login)은 인증이 필요 없는 공개 API이므로
+  api-client.js 를 경유하지 않고 순수 fetch() 로 호출한다.
+  (api-client 는 항상 X-Auth-Key 헤더를 붙이는데, 빈 헤더를 보내면 key-login 자체가 401 로 거부된다.)
+-->
+<!-- api-client.js 를 사용하지 않음: key-login 은 공개 API라 X-Auth-Key 헤더를 붙이면 안 됨 -->
+<script>
+'use strict';
+
+var LS_AUTH_KEY = 'rea_auth_key'; // api-client.js 와 동일한 키 이름
+var API_BASE = '/api/rea';
+
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function showMsg(text, ok) {
+  var m = document.getElementById('msg');
+  m.className = 'msg ' + (ok ? 'ok' : 'err');
+  m.textContent = text;
+}
+
+async function doLogin() {
+  var key = document.getElementById('authkey').value.trim();
+  if (!key) { showMsg('인증키를 입력하세요.', false); return; }
+  var btn = document.getElementById('loginBtn');
+  btn.disabled = true;
+  showMsg('', true);
+  try {
+    // 공개 API: X-Auth-Key 헤더 없이 호출 (body 에만 키 포함, URL 파라미터 사용 안 함)
+    var res = await fetch(API_BASE + '/auth/key-login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ authKey: key })
+    });
+    var data = null;
+    try { data = await res.json(); } catch (e) { /* 비JSON */ }
+    if (!res.ok || !data) {
+      showMsg((data && data.message) || ('로그인 실패 (HTTP ' + res.status + ')'), false);
+      return;
+    }
+    try { localStorage.setItem(LS_AUTH_KEY, key); } catch (e) { /* 무시 */ }
+    showMsg('로그인 성공', true);
+    var who = document.getElementById('who');
+    who.style.display = 'block';
+    who.innerHTML = '<b>' + esc(data.name) + '</b> · ' + esc(data.role) +
+      ' · 학원ID ' + esc(data.academyId);
+    document.getElementById('links').style.display = 'block';
+    document.getElementById('authkey').value = '';
+  } catch (e) {
+    showMsg('서버 연결 실패: ' + e.message, false);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function doLogout() {
+  try { localStorage.removeItem(LS_AUTH_KEY); } catch (e) { /* 무시 */ }
+  document.getElementById('who').style.display = 'none';
+  document.getElementById('links').style.display = 'none';
+  showMsg('저장된 인증키를 삭제했습니다.', true);
+}
+
+(function init() {
+  try {
+    if (localStorage.getItem(LS_AUTH_KEY)) {
+      showMsg('이미 로그인되어 있습니다. 다른 키로 다시 로그인할 수 있습니다.', true);
+      document.getElementById('links').style.display = 'block';
+    }
+  } catch (e) { /* 무시 */ }
+  document.getElementById('authkey').focus();
+})();
+</script>
+</body>
+</html>

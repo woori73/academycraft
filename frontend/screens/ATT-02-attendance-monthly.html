@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AcademyCraft - 월별 출결 현황 - ATT-02</title>
+<style>
+  /* 최소 기능 UI. 디자인 차별화는 2차. 업무 로직과 분리. */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, sans-serif; background: #f5f5f5; padding: 16px; }
+  .header { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+  .header h1 { font-size: 20px; }
+  .controls { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .controls select, .controls input { padding: 10px; border: 1px solid #ddd; border-radius: 8px; }
+  .controls button { padding: 10px 16px; background: #0066cc; color: #fff; border: none; border-radius: 8px; cursor: pointer; }
+  .legend { font-size: 13px; color: #555; margin-bottom: 8px; }
+  .legend span { display: inline-block; padding: 2px 8px; border-radius: 8px; margin-right: 4px; font-size: 12px; }
+  .table-wrap { overflow-x: auto; background: #fff; border-radius: 8px; }
+  table { border-collapse: collapse; min-width: 100%; font-size: 12px; }
+  th, td { border: 1px solid #eee; padding: 6px 4px; text-align: center; white-space: nowrap; }
+  th { background: #fafafa; position: sticky; top: 0; }
+  td.name, th.name { position: sticky; left: 0; background: #fff; text-align: left; padding-left: 10px; min-width: 90px; }
+  th.name { background: #fafafa; }
+  .c-IN, .c-OUT { background: #e6f4ea; color: #1a7f37; }
+  .c-LATE { background: #fef7e0; color: #b06000; }
+  .c-ABSENT { background: #fce8e6; color: #c5221f; }
+  .c-EARLY_LEAVE { background: #e8f0fe; color: #1a56db; }
+  .c-NONE { color: #ccc; }
+  .agg { font-size: 12px; color: #555; }
+  @media print {
+    body { background: #fff; padding: 0; }
+    .controls, .header p { display: none; }
+  }
+
+  /* [Phase5-Task4] 모바일 터치 영역 보강 (480px 이하) */
+  @media (max-width: 480px) {
+    button, .btn { min-height: 44px; }
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+    select, textarea { min-height: 44px; font-size: 16px; }
+    input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-width: 0; flex: none; accent-color: #0066cc; }
+  }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>월별 출결 현황</h1>
+  <p style="color:#666;font-size:13px;margin-top:4px;">REA 2단계 구현 - ATT-02 · 달력 형태 집계</p>
+</div>
+
+<div class="controls">
+  <select id="class-sel"><option value="">반 선택</option></select>
+  <input type="month" id="month-in">
+  <button onclick="loadMonthly()">조회</button>
+  <button onclick="window.print()">PDF 저장·프린트</button>
+</div>
+
+<div class="legend">
+  <span class="c-IN">출석</span><span class="c-LATE">지각</span>
+  <span class="c-ABSENT">결석</span><span class="c-EARLY_LEAVE">조퇴</span>
+  <span class="c-NONE">미기록</span>
+</div>
+
+<div class="table-wrap"><table id="tbl"></table></div>
+
+<script src="../components/api-client.js"></script>
+<script>
+var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+
+const DAY_LABEL = { IN: '출', OUT: '출', LATE: '지', ABSENT: '결', EARLY_LEAVE: '조', NONE: '-' };
+
+document.getElementById('month-in').value = new Date().toISOString().slice(0, 7);
+loadClasses();
+
+async function loadClasses() {
+  const res = await apiGet(`/1/classes`);
+  const classes = await res.json();
+  const sel = document.getElementById('class-sel');
+  classes.forEach(c => {
+    const o = document.createElement('option');
+    o.value = c.id;
+    o.textContent = `${c.name} (${c.studentCount}명)`;
+    sel.appendChild(o);
+  });
+}
+
+async function loadMonthly() {
+  const classId = document.getElementById('class-sel').value;
+  const yearMonth = document.getElementById('month-in').value;
+  if (!classId || !yearMonth) { alert('반과 월을 선택하세요.'); return; }
+  const res = await apiGet(`/1/attendance/monthly?classId=${classId}&yearMonth=${yearMonth}`);
+  const data = await res.json();
+  if (!res.ok) { alert(data.message || '조회 실패'); return; }
+
+  const tbl = document.getElementById('tbl');
+  let html = '<tr><th class="name">학생</th>';
+  for (let d = 1; d <= data.daysInMonth; d++) html += `<th>${d}</th>`;
+  html += '<th>출석</th><th>결석</th><th>지각</th><th>조퇴</th></tr>';
+
+  data.students.forEach(s => {
+    html += `<tr><td class="name">${escapeHtml(s.studentName)}</td>`;
+    for (let d = 1; d <= data.daysInMonth; d++) {
+      const st = s.dailyStatus[d] || 'NONE';
+      html += `<td class="c-${st}">${DAY_LABEL[st] || '-'}</td>`;
+    }
+    html += `<td class="agg">${s.presentDays}</td><td class="agg">${s.absentDays}</td>` +
+            `<td class="agg">${s.lateDays}</td><td class="agg">${s.earlyLeaveDays}</td></tr>`;
+  });
+  tbl.innerHTML = html;
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+</script>
+</body>
+</html>

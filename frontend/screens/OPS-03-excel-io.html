@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AcademyCraft - 엑셀 가져오기·내보내기 - OPS-03</title>
+<style>
+  /* 최소 기능 UI. 디자인 차별화는 2차. 업무 로직과 분리. */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, sans-serif; background: #f5f5f5; padding: 16px; }
+  .header { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+  .header h1 { font-size: 20px; }
+  .nav { margin-bottom: 16px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn { padding: 12px 20px; background: #0066cc; color: #fff; border: none;
+         border-radius: 8px; cursor: pointer; font-size: 15px; }
+  .btn-sm { padding: 6px 12px; font-size: 13px; text-decoration: none; display: inline-block; }
+  .btn-ghost { background: #fff; color: #0066cc; border: 1px solid #0066cc; }
+  .msg { padding: 10px; border-radius: 8px; margin-bottom: 12px; display: none; }
+  .msg.ok { display: block; background: #e6f4ea; color: #1a7f37; }
+  .msg.err { display: block; background: #fce8e6; color: #c5221f; }
+  .panel { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+  .panel h2 { font-size: 16px; margin-bottom: 8px; }
+  .panel p.desc { font-size: 13px; color: #666; margin-bottom: 12px; }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 13px; color: #555; margin-bottom: 6px; font-weight: bold; }
+  .field input, .field select, .field textarea { width: 100%; padding: 10px; border: 1px solid #ddd;
+         border-radius: 8px; font-size: 14px; }
+  .row { display: flex; gap: 10px; align-items: flex-end; }
+  .row .field { flex: 1; margin-bottom: 0; }
+  .hint { font-size: 12px; color: #888; margin-top: 6px; }
+  .result { background: #f8f9fa; border-radius: 8px; padding: 12px; margin-top: 12px;
+            font-size: 13px; display: none; }
+  .result.show { display: block; }
+  .result ul { margin: 8px 0 0 18px; color: #c5221f; }
+  code { background: #eee; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+  @media (max-width: 600px) {
+    .row { flex-direction: column; align-items: stretch; }
+  }
+
+  /* [Phase5-Task4] 모바일 터치 영역 보강 (480px 이하) */
+  @media (max-width: 480px) {
+    button, .btn { min-height: 44px; }
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+    select, textarea { min-height: 44px; font-size: 16px; }
+    input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-width: 0; flex: none; accent-color: #0066cc; }
+  }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>엑셀 가져오기·내보내기</h1>
+  <p style="color:#666;font-size:13px;margin-top:4px;">REA 7단계 구현 - OPS-03 · 엑셀 호환 CSV (UTF-8 BOM)</p>
+</div>
+
+<div class="nav">
+  <a href="OPS-01-schedule-calendar.html" class="btn btn-ghost btn-sm">일정·캘린더</a>
+  <a href="OPS-02-dashboard.html" class="btn btn-ghost btn-sm">통계 대시보드</a>
+  <a href="OPS-03-excel-io.html" class="btn btn-sm">엑셀 가져오기·내보내기</a>
+</div>
+
+<div class="msg" id="msg"></div>
+
+<div class="panel">
+  <h2>학생 목록 내보내기</h2>
+  <p class="desc">등록된 학생 전체를 CSV로 다운로드합니다. 엑셀에서 바로 열 수 있습니다.</p>
+  <p class="desc">열: <code>이름,학년,학교,인증키,학부모명,학부모연락처,반,등록일</code></p>
+  <a class="btn" id="dl-students" href="#">학생 목록 다운로드</a>
+</div>
+
+<div class="panel">
+  <h2>출결 기록 내보내기</h2>
+  <p class="desc">반별·월별 출결 기록을 CSV로 다운로드합니다.</p>
+  <p class="desc">열: <code>일자,이름,반,구분,발생시각,메모</code></p>
+  <div class="row">
+    <div class="field">
+      <label>반 (선택)</label>
+      <select id="f-class"><option value="">학원 전체</option></select>
+    </div>
+    <div class="field">
+      <label>월 *</label>
+      <input type="month" id="f-ym">
+    </div>
+    <div class="field">
+      <button class="btn" onclick="downloadAttendance()">다운로드</button>
+    </div>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>학생 일괄 등록 (가져오기)</h2>
+  <p class="desc">CSV 형식으로 학생을 일괄 등록합니다. 인증키는 자동 발급됩니다.</p>
+  <p class="desc">열 순서: <code>이름,학년,반,학부모명,연락처</code> (첫 행에 헤더를 넣어도 됩니다)</p>
+  <div class="field">
+    <label>CSV 파일 선택</label>
+    <input type="file" id="f-file" accept=".csv,text/csv">
+  </div>
+  <div class="field">
+    <label>또는 직접 입력</label>
+    <textarea id="f-csv" rows="6" placeholder="이름,학년,반,학부모명,연락처&#10;홍길동,고2,수학A반,홍부모,010-1234-5678"></textarea>
+  </div>
+  <button class="btn" onclick="importStudents()">일괄 등록</button>
+  <p class="hint">반 이름이 학원에 없으면 학생은 등록되고 반 배정은 생략됩니다. 이름이 비어 있는 행은 실패합니다.</p>
+  <div class="result" id="import-result"></div>
+</div>
+
+<script src="../components/api-client.js"></script>
+<script>
+var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+
+function showMsg(text, ok) {
+  const el = document.getElementById('msg');
+  el.textContent = text;
+  el.className = 'msg ' + (ok ? 'ok' : 'err');
+  setTimeout(() => { el.className = 'msg'; }, 5000);
+}
+
+async function init() {
+  // CSV 다운로드는 X-Auth-Key 헤더가 필요하므로 <a href> 직접 이동 대신
+  // apiGet + Blob 방식으로 다운로드한다.
+  document.getElementById('dl-students').onclick = (e) => {
+    e.preventDefault();
+    downloadCsv(`/1/export/students.csv`, 'students.csv');
+  };
+  const now = new Date();
+  document.getElementById('f-ym').value =
+    now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  try {
+    const res = await apiGet(`/1/classes`);
+    if (res.ok) {
+      const list = await res.json();
+      const sel = document.getElementById('f-class');
+      list.forEach(c => {
+        const o = document.createElement('option');
+        o.value = c.id; o.textContent = c.name;
+        sel.appendChild(o);
+      });
+    }
+  } catch (e) { /* 전체 내보내기는 동작 */ }
+}
+
+/** 인증 헤더가 필요한 파일 다운로드 (Blob 방식) */
+async function downloadCsv(path, filename) {
+  try {
+    const res = await apiGet(path);
+    if (!res.ok) { showMsg('다운로드 실패', false); return; }
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  } catch (e) {
+    showMsg('다운로드 실패: ' + e.message, false);
+  }
+}
+
+async function downloadAttendance() {
+  const ym = document.getElementById('f-ym').value;
+  if (!ym) { showMsg('월을 선택하세요.', false); return; }
+  const classId = document.getElementById('f-class').value;
+  let path = `/1/export/attendance.csv?yearMonth=${encodeURIComponent(ym)}`;
+  if (classId) path += `&classId=${encodeURIComponent(classId)}`;
+  await downloadCsv(path, `attendance-${ym}.csv`);
+}
+
+async function importStudents() {
+  let csv = document.getElementById('f-csv').value;
+  const file = document.getElementById('f-file').files[0];
+  if (file) {
+    csv = await file.text();
+  }
+  if (!csv.trim()) { showMsg('CSV 내용을 입력하거나 파일을 선택하세요.', false); return; }
+  try {
+    // CSV 원문 전송 (Content-Type: text/csv) — X-Auth-Key 헤더는 api-client 가 자동 추가
+    const res = await apiPostText(`/1/import/students.csv`, csv, 'text/csv; charset=UTF-8');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || '가져오기 실패');
+    }
+    const r = await res.json();
+    const el = document.getElementById('import-result');
+    let html = `<b>결과:</b> 전체 ${r.totalRows}행 · 성공 ${r.successCount}건 · 실패 ${r.failedCount}건`;
+    if (r.errors && r.errors.length > 0) {
+      html += '<ul>' + r.errors.map(e => `<li>${escapeHtml(e)}</li>`).join('') + '</ul>';
+    }
+    el.innerHTML = html;
+    el.classList.add('show');
+    showMsg(`학생 ${r.successCount}명이 등록되었습니다.`, true);
+  } catch (e) {
+    showMsg('가져오기 실패: ' + e.message, false);
+  }
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+init();
+</script>
+</body>
+</html>

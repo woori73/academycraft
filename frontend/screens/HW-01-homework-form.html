@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AcademyCraft - 숙제 등록 - HW-01</title>
+<style>
+  /* 최소 기능 UI. 디자인 차별화는 2차. 업무 로직과 분리. */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, sans-serif; background: #f5f5f5; padding: 16px; }
+  .header { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+  .header h1 { font-size: 20px; }
+  .form { background: #fff; padding: 16px; border-radius: 8px; }
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 13px; color: #555; margin-bottom: 6px; font-weight: bold; }
+  .field input, .field textarea, .field select { width: 100%; padding: 10px; border: 1px solid #ddd;
+                                                border-radius: 8px; font-size: 14px; }
+  .field textarea { min-height: 120px; resize: vertical; }
+  .row { display: flex; gap: 10px; }
+  .row .field { flex: 1; }
+  .btn { padding: 12px 20px; background: #0066cc; color: #fff; border: none;
+         border-radius: 8px; cursor: pointer; font-size: 15px; width: 100%; }
+  .btn-sm { padding: 6px 12px; font-size: 13px; width: auto; }
+  .btn-ghost { background: #fff; color: #0066cc; border: 1px solid #0066cc; }
+  .msg { padding: 10px; border-radius: 8px; margin-bottom: 12px; display: none; }
+  .msg.ok { display: block; background: #e6f4ea; color: #1a7f37; }
+  .msg.err { display: block; background: #fce8e6; color: #c5221f; }
+  .nav { margin-bottom: 16px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .hint { font-size: 12px; color: #888; margin-top: 4px; }
+  @media (max-width: 600px) {
+    .row { flex-direction: column; gap: 0; }
+  }
+
+  /* [Phase5-Task4] 모바일 터치 영역 보강 (480px 이하) */
+  @media (max-width: 480px) {
+    button, .btn { min-height: 44px; }
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+    select, textarea { min-height: 44px; font-size: 16px; }
+    input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-width: 0; flex: none; accent-color: #0066cc; }
+  }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>숙제 등록</h1>
+  <p style="color:#666;font-size:13px;margin-top:4px;">REA 6단계 구현 - HW-01 · 강사 · 반별/학생별 · 등록 시 학부모에게 숙제 알림 발송</p>
+</div>
+
+<div class="nav">
+  <a href="HW-01-homework-form.html" class="btn btn-sm">숙제 등록</a>
+  <a href="HW-02-homework-check.html" class="btn btn-ghost btn-sm">숙제 검사</a>
+  <a href="HW-03-homework-list.html" class="btn btn-ghost btn-sm">숙제 안내</a>
+</div>
+
+<div class="msg" id="msg"></div>
+
+<div class="form">
+  <div class="row">
+    <div class="field">
+      <label>대상 반 (반별 숙제)</label>
+      <select id="f-class"><option value="">반 선택 (선택)</option></select>
+    </div>
+    <div class="field">
+      <label>대상 학생 (학생별 숙제)</label>
+      <select id="f-student"><option value="">학생 선택 (선택)</option></select>
+    </div>
+  </div>
+  <div class="hint" style="margin-bottom:14px;">반 또는 학생 중 최소 하나는 지정해야 합니다.</div>
+  <div class="field">
+    <label>숙제 제목</label>
+    <input id="f-title" placeholder="예: 수학 숙제 (p.30)">
+  </div>
+  <div class="field">
+    <label>숙제 내용</label>
+    <textarea id="f-content" placeholder="예: 교재 p.30 문제 1~20번 풀어오기"></textarea>
+  </div>
+  <div class="field">
+    <label>마감일</label>
+    <input id="f-due" type="date">
+  </div>
+  <div class="field">
+    <label>내신Wiki 문항 ID (선택, 쉼표 구분 — 연동 구조용)</label>
+    <input id="f-refs" placeholder="예: 1001, 1002">
+    <div class="hint">숙제 출제에 활용한 내신Wiki 문항 참조. 실제 연동은 향후 단계.</div>
+  </div>
+  <button class="btn" onclick="submitHomework()">숙제 등록 · 알림 발송</button>
+</div>
+
+<script src="../components/api-client.js"></script>
+<script>
+var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+
+function showMsg(text, ok) {
+  const m = document.getElementById('msg');
+  m.className = 'msg ' + (ok ? 'ok' : 'err');
+  m.textContent = text;
+}
+
+async function loadOptions() {
+  try {
+    const [cr, sr] = await Promise.all([
+      apiGet(`/1/classes`), apiGet(`/1/students`)
+    ]);
+    const classes = await cr.json();
+    const students = await sr.json();
+    if (cr.ok) {
+      const sel = document.getElementById('f-class');
+      classes.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.id;
+        opt.textContent = c.name;
+        sel.appendChild(opt);
+      });
+    }
+    if (sr.ok) {
+      const sel = document.getElementById('f-student');
+      students.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.id;
+        opt.textContent = s.name;
+        sel.appendChild(opt);
+      });
+    }
+  } catch (e) { /* 무시 */ }
+}
+
+async function submitHomework() {
+  const classId = document.getElementById('f-class').value;
+  const studentId = document.getElementById('f-student').value;
+  const title = document.getElementById('f-title').value.trim();
+  const content = document.getElementById('f-content').value.trim();
+  const dueDate = document.getElementById('f-due').value;
+  if (!classId && !studentId) { showMsg('반 또는 학생을 지정하세요.', false); return; }
+  if (!title) { showMsg('숙제 제목을 입력하세요.', false); return; }
+  if (!content) { showMsg('숙제 내용을 입력하세요.', false); return; }
+  if (!dueDate) { showMsg('마감일을 입력하세요.', false); return; }
+
+  const refs = document.getElementById('f-refs').value.split(',')
+    .map(s => s.trim()).filter(s => s !== '')
+    .map(id => ({ questionId: Number(id), source: 'NAESIN_WIKI' }))
+    .filter(r => !isNaN(r.questionId));
+
+  const body = {
+    classId: classId ? Number(classId) : null,
+    studentId: studentId ? Number(studentId) : null,
+    title, content, dueDate,
+    questionRefs: refs
+  };
+  try {
+    const res = await apiPost(`/1/homework`, body);
+    const data = await res.json();
+    if (!res.ok) { showMsg(data.message || '등록 실패', false); return; }
+    const n = data.notificationSentCount || 0;
+    showMsg(`숙제 등록 완료 · 학부모 알림 ${n}건 발송`, true);
+    document.getElementById('f-title').value = '';
+    document.getElementById('f-content').value = '';
+  } catch (e) {
+    showMsg('서버 연결 실패', false);
+  }
+}
+
+loadOptions();
+</script>
+</body>
+</html>

@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AcademyCraft - 반별 출결부 - ATT-03</title>
+<style>
+  /* 최소 기능 UI. 디자인 차별화는 2차. 업무 로직과 분리. */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, sans-serif; background: #f5f5f5; padding: 16px; }
+  .header { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+  .header h1 { font-size: 20px; }
+  .controls { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .controls select, .controls input { padding: 10px; border: 1px solid #ddd; border-radius: 8px; }
+  .controls button { padding: 10px 16px; background: #0066cc; color: #fff; border: none; border-radius: 8px; cursor: pointer; }
+  .card { background: #fff; padding: 14px; border-radius: 8px; margin-bottom: 8px;
+          display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+  .who { font-size: 15px; }
+  .who .nm { font-weight: bold; font-size: 16px; }
+  .who .gr { color: #666; font-size: 13px; margin-left: 6px; }
+  .times { color: #666; font-size: 13px; margin-top: 4px; }
+  .status { display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 13px; font-weight: bold; }
+  .st-PRESENT { background: #e6f4ea; color: #1a7f37; }
+  .st-CHECKED_OUT { background: #e8f0fe; color: #1a56db; }
+  .st-ABSENT { background: #fce8e6; color: #c5221f; }
+  .st-LATE { background: #fef7e0; color: #b06000; }
+  .st-EARLY_LEAVE { background: #e8f0fe; color: #1a56db; }
+  .st-NONE { background: #f1f3f4; color: #5f6368; }
+  .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .btn { padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; background: #fff;
+         cursor: pointer; font-size: 13px; }
+  .btn:hover { background: #f5f5f5; }
+  @media (max-width: 600px) {
+    .card { flex-direction: column; align-items: stretch; }
+  }
+
+  /* [Phase5-Task4] 모바일 터치 영역 보강 (480px 이하) */
+  @media (max-width: 480px) {
+    button, .btn { min-height: 44px; }
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+    select, textarea { min-height: 44px; font-size: 16px; }
+    input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-width: 0; flex: none; accent-color: #0066cc; }
+  }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>반별 출결부</h1>
+  <p style="color:#666;font-size:13px;margin-top:4px;">REA 2단계 구현 - ATT-03 · 반·일자별 출결 상태</p>
+</div>
+
+<div class="controls">
+  <select id="class-sel"><option value="">반 선택</option></select>
+  <input type="date" id="date-in">
+  <button onclick="loadRoster()">조회</button>
+</div>
+
+<div id="summary" style="margin-bottom:8px;color:#555;font-size:14px;"></div>
+<div id="list"></div>
+
+<script src="../components/api-client.js"></script>
+<script>
+var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+
+const STATUS_LABEL = {
+  PRESENT: '등원', CHECKED_OUT: '하원완료', ABSENT: '결석',
+  LATE: '지각', EARLY_LEAVE: '조퇴', NONE: '미기록'
+};
+
+document.getElementById('date-in').value = new Date().toISOString().slice(0, 10);
+loadClasses();
+
+async function loadClasses() {
+  const res = await apiGet(`/1/classes`);
+  const classes = await res.json();
+  const sel = document.getElementById('class-sel');
+  classes.forEach(c => {
+    const o = document.createElement('option');
+    o.value = c.id;
+    o.textContent = `${c.name} (${c.studentCount}명)`;
+    sel.appendChild(o);
+  });
+}
+
+async function loadRoster() {
+  const classId = document.getElementById('class-sel').value;
+  const date = document.getElementById('date-in').value;
+  if (!classId || !date) { alert('반과 일자를 선택하세요.'); return; }
+  const res = await apiGet(`/1/attendance/roster?classId=${classId}&date=${date}`);
+  const data = await res.json();
+  if (!res.ok) { alert(data.message || '조회 실패'); return; }
+
+  const counts = {};
+  data.entries.forEach(e => { counts[e.status] = (counts[e.status] || 0) + 1; });
+  document.getElementById('summary').textContent =
+    `${data.className} · ${data.date} · 전체 ${data.entries.length}명` +
+    Object.entries(counts).map(([k, v]) => ` · ${STATUS_LABEL[k]} ${v}명`).join('');
+
+  const list = document.getElementById('list');
+  list.innerHTML = '';
+  data.entries.forEach(e => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    const times = [
+      e.checkInAt ? `등원 ${e.checkInAt}` : null,
+      e.checkOutAt ? `하원 ${e.checkOutAt}` : null
+    ].filter(Boolean).join(' · ');
+    card.innerHTML = `
+      <div class="who">
+        <span class="nm">${escapeHtml(e.studentName)}</span>
+        <span class="gr">${escapeHtml(e.grade || '')}</span>
+        <span class="status st-${e.status}">${STATUS_LABEL[e.status] || e.status}</span>
+        ${times ? `<div class="times">${escapeHtml(times)}</div>` : ''}
+      </div>
+      <div class="actions">
+        ${e.status === 'NONE' ? `
+          <button class="btn" onclick="quickCheck(${e.studentId},'ABSENT')">결석 기록</button>
+          <button class="btn" onclick="quickCheck(${e.studentId},'LATE')">지각 기록</button>
+          <button class="btn" onclick="quickCheck(${e.studentId},'CHECK_IN')">등원 기록</button>` : ''}
+        ${e.events && e.events.length ? `
+          <button class="btn" onclick='correctLast(${JSON.stringify(e.events[e.events.length-1].id)},"${escapeHtml(e.studentName)}")'>정정</button>` : ''}
+      </div>`;
+    list.appendChild(card);
+  });
+}
+
+async function quickCheck(studentId, eventType) {
+  const note = prompt('메모 (선택, 결석·지각 사유 등):', '');
+  if (note === null) return;
+  const res = await apiPost(`/1/attendance/check`, { studentId, eventType, note: note || null });
+  const data = await res.json();
+  if (!res.ok) { alert(data.message || '기록 실패'); return; }
+  loadRoster();
+}
+
+async function correctLast(eventId, studentName) {
+  const type = prompt(`${studentName} - 정정 후 출결 구분 (CHECK_IN/CHECK_OUT/ABSENT/LATE/EARLY_LEAVE):`, 'ABSENT');
+  if (type === null) return;
+  const reason = prompt('정정 사유 (필수):', '');
+  if (reason === null || !reason.trim()) { alert('정정 사유는 필수입니다.'); return; }
+  const res = await apiPut(`/1/attendance/${eventId}`, { eventType: type.trim().toUpperCase(), reason: reason.trim() });
+  const data = await res.json();
+  if (!res.ok) { alert(data.message || '정정 실패'); return; }
+  loadRoster();
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+</script>
+</body>
+</html>

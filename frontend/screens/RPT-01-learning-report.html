@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AcademyCraft - 학습 리포트 - RPT-01</title>
+<style>
+  /* 최소 기능 UI. 디자인 차별화는 2차. 업무 로직과 분리.
+     Report v2.8 HTML은 UI 참고용 — 6단계에서는 데이터 API까지만 구현. */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, sans-serif; background: #f5f5f5; padding: 16px; }
+  .header { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+  .header h1 { font-size: 20px; }
+  .card { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 12px; }
+  .card h2 { font-size: 16px; margin-bottom: 10px; }
+  .field label { display: block; font-size: 13px; color: #555; margin-bottom: 6px; font-weight: bold; }
+  .field select { width: 100%; padding: 10px; border: 1px solid #ddd;
+                  border-radius: 8px; font-size: 14px; }
+  .stats { display: flex; gap: 10px; flex-wrap: wrap; }
+  .stat { flex: 1; min-width: 110px; background: #f8f9fa; border-radius: 8px; padding: 10px 12px; }
+  .stat .v { font-size: 20px; font-weight: bold; }
+  .stat .k { font-size: 12px; color: #888; margin-top: 2px; }
+  .row { display: flex; justify-content: space-between; padding: 8px 0;
+         border-bottom: 1px solid #eee; font-size: 14px; }
+  .row:last-child { border-bottom: none; }
+  .row .sub { font-size: 12px; color: #888; }
+  .bar { height: 8px; background: #eee; border-radius: 4px; margin-top: 6px; overflow: hidden; }
+  .bar > div { height: 100%; background: #0066cc; border-radius: 4px; }
+  .btn-sm { padding: 6px 12px; font-size: 13px; }
+  .btn-ghost { background: #fff; color: #0066cc; border: 1px solid #0066cc;
+               border-radius: 8px; cursor: pointer; text-decoration: none; }
+  .btn { background: #0066cc; color: #fff; border: none; border-radius: 8px;
+         cursor: pointer; text-decoration: none; }
+  .nav { margin-bottom: 16px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .msg { padding: 10px; border-radius: 8px; margin-bottom: 12px; display: none; }
+  .msg.err { display: block; background: #fce8e6; color: #c5221f; }
+  .empty { color: #888; font-size: 14px; text-align: center; padding: 24px; }
+  @media (max-width: 600px) {
+    .stat { min-width: 45%; }
+  }
+  @media print {
+    .nav, .card:first-of-type { display: none; }
+    body { background: #fff; }
+  }
+  @media (max-width: 480px) {
+    button, .btn { min-height: 44px; }
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+    select, textarea { min-height: 44px; font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>학습 리포트</h1>
+  <p style="color:#666;font-size:13px;margin-top:4px;">REA 6단계 구현 - RPT-01 · 학부모 · 성적·숙제·진도·출결 종합 (데이터 API 기반)</p>
+</div>
+
+<div class="nav">
+  <a href="GRD-02-grade-list.html" class="btn btn-ghost btn-sm">성적 조회</a>
+  <a href="HW-03-homework-list.html" class="btn btn-ghost btn-sm">숙제 안내</a>
+  <a href="RPT-01-learning-report.html" class="btn btn-sm">학습 리포트</a>
+  <button class="btn btn-ghost btn-sm" onclick="window.print()">프린트</button>
+</div>
+
+<div class="msg" id="msg"></div>
+
+<div class="card">
+  <div class="field">
+    <label>학생 선택</label>
+    <select id="f-student" onchange="loadReport()"><option value="">학생 선택</option></select>
+  </div>
+</div>
+
+<div id="report"><div class="card"><div class="empty">학생을 선택하세요.</div></div></div>
+
+<script src="../components/api-client.js"></script>
+<script>
+var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+
+function showMsg(text) {
+  const m = document.getElementById('msg');
+  m.className = 'msg err';
+  m.textContent = text;
+}
+
+async function loadStudents() {
+  try {
+    const res = await apiGet(`/1/students`);
+    const data = await res.json();
+    if (!res.ok) return;
+    const sel = document.getElementById('f-student');
+    data.forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s.id;
+      opt.textContent = s.name;
+      sel.appendChild(opt);
+    });
+  } catch (e) { /* 무시 */ }
+}
+
+async function loadReport() {
+  const studentId = document.getElementById('f-student').value;
+  const box = document.getElementById('report');
+  if (!studentId) {
+    box.innerHTML = '<div class="card"><div class="empty">학생을 선택하세요.</div></div>';
+    return;
+  }
+  try {
+    const res = await apiGet(`/1/reports/student/${studentId}`);
+    const r = await res.json();
+    if (!res.ok) { showMsg(r.message || '조회 실패'); return; }
+
+    const g = r.gradeSummary, h = r.homeworkSummary, p = r.progressSummary, a = r.attendanceSummary;
+
+    const subjectRows = g.subjectAverages.map(s =>
+      `<div class="row"><div>${escapeHtml(s.subject)} <span class="sub">${s.count}건</span></div>` +
+      `<div><b>${s.avgRate}점</b></div></div>`).join('');
+
+    const progressRows = p.latest.map(x =>
+      `<div class="row"><div>${escapeHtml(x.unit)}<div class="bar"><div style="width:${x.progressRate}%"></div></div></div>` +
+      `<div><b>${x.progressRate}%</b><div class="sub">${x.recordedDate}</div></div></div>`).join('');
+
+    box.innerHTML = `
+      <div class="card"><h2>${escapeHtml(r.studentName)} 학습 리포트</h2>
+        <div class="row"><div>생성 시각</div><div class="sub">${r.generatedAt.replace('T', ' ').substring(0, 16)}</div></div>
+      </div>
+      <div class="card"><h2>성적</h2>
+        <div class="stats">
+          <div class="stat"><div class="v">${g.gradeCount}</div><div class="k">성적 건수</div></div>
+          <div class="stat"><div class="v">${g.avgRate !== null ? g.avgRate + '점' : '-'}</div><div class="k">전체 평균</div></div>
+        </div>
+        <div style="margin-top:8px">${subjectRows || '<div class="empty">성적 없음</div>'}</div>
+      </div>
+      <div class="card"><h2>숙제</h2>
+        <div class="stats">
+          <div class="stat"><div class="v">${h.assignedCount}</div><div class="k">배정</div></div>
+          <div class="stat"><div class="v">${h.completedCount}</div><div class="k">완료</div></div>
+          <div class="stat"><div class="v">${h.incompleteCount}</div><div class="k">미완료</div></div>
+          <div class="stat"><div class="v">${h.uncheckedCount}</div><div class="k">미검사</div></div>
+        </div>
+      </div>
+      <div class="card"><h2>학습 진도</h2>
+        <div class="stats">
+          <div class="stat"><div class="v">${p.recordCount}</div><div class="k">진도 기록</div></div>
+        </div>
+        <div style="margin-top:8px">${progressRows || '<div class="empty">진도 기록 없음</div>'}</div>
+      </div>
+      <div class="card"><h2>출결 (최근 ${a.periodDays}일)</h2>
+        <div class="stats">
+          <div class="stat"><div class="v">${a.checkInDays}</div><div class="k">등원일</div></div>
+          <div class="stat"><div class="v">${a.absentDays}</div><div class="k">결석일</div></div>
+          <div class="stat"><div class="v">${a.lateDays}</div><div class="k">지각일</div></div>
+          <div class="stat"><div class="v">${a.earlyLeaveDays}</div><div class="k">조퇴일</div></div>
+        </div>
+      </div>`;
+  } catch (e) {
+    showMsg('서버 연결 실패');
+  }
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+loadStudents();
+</script>
+</body>
+</html>

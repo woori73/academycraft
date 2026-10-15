@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AcademyCraft - 반소식 목록 - NTC-02</title>
+<style>
+  /* 최소 기능 UI. 디자인 차별화는 2차. 업무 로직과 분리. */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, sans-serif; background: #f5f5f5; padding: 16px; }
+  .header { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+  .header h1 { font-size: 20px; }
+  .login { background: #fff; padding: 14px; border-radius: 8px; margin-bottom: 16px;
+           display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .login input, .login select { padding: 10px; border: 1px solid #ddd; border-radius: 8px;
+                                flex: 1; min-width: 160px; }
+  .login button, .btn { padding: 10px 16px; background: #0066cc; color: #fff; border: none;
+                        border-radius: 8px; cursor: pointer; }
+  .btn-sm { padding: 6px 12px; font-size: 13px; }
+  .btn-ghost { background: #fff; color: #0066cc; border: 1px solid #0066cc; }
+  .card { background: #fff; padding: 14px; border-radius: 8px; margin-bottom: 8px; cursor: pointer; }
+  .card:hover { background: #f0f6ff; }
+  .card .ttl { font-weight: bold; font-size: 15px; margin-bottom: 4px; }
+  .card .meta { color: #666; font-size: 12px; margin-bottom: 6px; }
+  .card .preview { font-size: 13px; color: #555; white-space: pre-wrap; }
+  .tag { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px;
+         font-weight: bold; margin-right: 6px; background: #e8f0fe; color: #1a56db; }
+  .views { color: #999; font-size: 12px; }
+  .msg { padding: 10px; border-radius: 8px; margin-bottom: 12px; display: none; }
+  .msg.ok { display: block; background: #e6f4ea; color: #1a7f37; }
+  .msg.err { display: block; background: #fce8e6; color: #c5221f; }
+  .nav { margin-bottom: 16px; display: flex; gap: 8px; }
+  @media (max-width: 600px) {
+    .login { flex-direction: column; align-items: stretch; }
+  }
+
+  /* [Phase5-Task4] 모바일 터치 영역 보강 (480px 이하) */
+  @media (max-width: 480px) {
+    button, .btn { min-height: 44px; }
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+    select, textarea { min-height: 44px; font-size: 16px; }
+    input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-width: 0; flex: none; accent-color: #0066cc; }
+  }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>반소식 목록</h1>
+  <p style="color:#666;font-size:13px;margin-top:4px;">REA 4단계 구현 - NTC-02 · 반별 공지 · 조회수(관리자만)</p>
+</div>
+
+<div class="nav">
+  <a href="NTC-01-notice-list.html" class="btn btn-ghost btn-sm">전체공지</a>
+  <a href="NTC-02-class-news.html" class="btn btn-ghost btn-sm">반소식</a>
+  <a href="NTC-03-notice-form.html" class="btn btn-sm">공지 작성</a>
+</div>
+
+<div class="login">
+  <select id="class-sel"><option value="">반 선택 (필수)</option></select>
+  <input id="authkey" placeholder="학생 인증키 (학부모, 비우면 관리자)">
+  <button onclick="loadList()">조회</button>
+</div>
+
+<div class="msg" id="msg"></div>
+<div id="list"></div>
+
+<script src="../components/api-client.js"></script>
+<script>
+var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+
+function showMsg(text, ok) {
+  const m = document.getElementById('msg');
+  m.className = 'msg ' + (ok ? 'ok' : 'err');
+  m.textContent = text;
+}
+
+function fmtDate(s) {
+  if (!s) return '';
+  return s.replace('T', ' ').substring(0, 16);
+}
+
+function esc(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+async function loadClasses() {
+  try {
+    const res = await apiGet(`/1/classes`);
+    const data = await res.json();
+    if (!res.ok) return;
+    const sel = document.getElementById('class-sel');
+    data.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.id;
+      opt.textContent = c.name;
+      sel.appendChild(opt);
+    });
+  } catch (e) { /* 무시 */ }
+}
+
+async function loadList() {
+  const classId = document.getElementById('class-sel').value;
+  const authKey = document.getElementById('authkey').value.trim();
+  if (!classId) { showMsg('반을 선택하세요.', false); return; }
+  // 학생 인증키는 URL 파라미터에 포함하지 않고 X-Auth-Key 헤더로만 전송
+  let url = `/1/notices?scope=CLASS&classId=${classId}`;
+  try {
+    const res = await apiGet(url, authKey || undefined);
+    const data = await res.json();
+    if (!res.ok) { showMsg(data.message || '조회 실패', false); return; }
+    showMsg('', true);
+    const list = document.getElementById('list');
+    if (data.length === 0) {
+      list.innerHTML = '<div class="card"><div class="meta">등록된 반소식이 없습니다.</div></div>';
+      return;
+    }
+    list.innerHTML = data.map(n => {
+      const views = (n.viewCount != null)
+        ? ` <span class="views">조회수 ${n.viewCount}</span>` : '';
+      return `<div class="card" onclick="location.href='NTC-04-notice-detail.html?id=${n.id}'">
+        <div class="ttl"><span class="tag">반소식</span>${esc(n.title)}</div>
+        <div class="meta">${esc(n.authorName || '학원')}${views} · 확인 ${n.readCount}명 · ${fmtDate(n.createdAt)}</div>
+        <div class="preview">${esc(n.contentPreview || '')}</div>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    showMsg('서버 연결 실패: ' + e.message, false);
+  }
+}
+
+loadClasses();
+</script>
+</body>
+</html>

@@ -1,0 +1,48 @@
+# AcademyCraft .gitignore
+
+# 컴파일 산출물
+*.class
+target/
+build/
+
+# 테스트 빌드 산출물
+.testbuild/classes/
+.testbuild/test-classes/
+
+# 로그
+*.log
+logs/
+
+# DB 파일
+*.db
+*.sqlite
+*.h2.db
+*.mv.db
+*.trace.db
+
+# 환경설정 (비밀정보)
+.env
+.env.*
+*.env
+
+# 백업 압축파일
+*.tar.gz
+*.zip
+*.bak
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.iml
+.classpath
+.project
+.settings/
+
+# 임시 파일
+*.tmp
+*.swp
+*~

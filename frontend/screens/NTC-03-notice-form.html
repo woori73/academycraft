@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AcademyCraft - 공지 작성 - NTC-03</title>
+<style>
+  /* 최소 기능 UI. 디자인 차별화는 2차. 업무 로직과 분리. */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, sans-serif; background: #f5f5f5; padding: 16px; }
+  .header { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+  .header h1 { font-size: 20px; }
+  .form { background: #fff; padding: 16px; border-radius: 8px; }
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 13px; color: #555; margin-bottom: 6px; font-weight: bold; }
+  .field input, .field textarea, .field select { width: 100%; padding: 10px; border: 1px solid #ddd;
+                                                 border-radius: 8px; font-size: 14px; }
+  .field textarea { min-height: 160px; resize: vertical; }
+  .btn { padding: 12px 20px; background: #0066cc; color: #fff; border: none;
+         border-radius: 8px; cursor: pointer; font-size: 15px; width: 100%; }
+  .btn-sm { padding: 6px 12px; font-size: 13px; width: auto; }
+  .btn-ghost { background: #fff; color: #0066cc; border: 1px solid #0066cc; }
+  .msg { padding: 10px; border-radius: 8px; margin-bottom: 12px; display: none; }
+  .msg.ok { display: block; background: #e6f4ea; color: #1a7f37; }
+  .msg.err { display: block; background: #fce8e6; color: #c5221f; }
+  .nav { margin-bottom: 16px; display: flex; gap: 8px; }
+  .hint { font-size: 12px; color: #888; margin-top: 4px; }
+
+  /* [Phase5-Task4] 모바일 터치 영역 보강 (480px 이하) */
+  @media (max-width: 480px) {
+    button, .btn { min-height: 44px; }
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+    select, textarea { min-height: 44px; font-size: 16px; }
+    input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-width: 0; flex: none; accent-color: #0066cc; }
+  }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>공지 작성</h1>
+  <p style="color:#666;font-size:13px;margin-top:4px;">REA 4단계 구현 - NTC-03 · 전체공지/반소식 · 발송 시 대상 학부모 알림</p>
+</div>
+
+<div class="nav">
+  <a href="NTC-01-notice-list.html" class="btn btn-ghost btn-sm">전체공지</a>
+  <a href="NTC-02-class-news.html" class="btn btn-ghost btn-sm">반소식</a>
+  <a href="NTC-03-notice-form.html" class="btn btn-sm">공지 작성</a>
+</div>
+
+<div class="msg" id="msg"></div>
+
+<div class="form">
+  <div class="field">
+    <label>대상</label>
+    <select id="f-scope" onchange="toggleClass()">
+      <option value="ALL">전체공지 (학원 전체)</option>
+      <option value="CLASS">반소식 (특정 반)</option>
+    </select>
+  </div>
+  <div class="field" id="class-field" style="display:none">
+    <label>반 선택</label>
+    <select id="f-class"><option value="">반 선택</option></select>
+  </div>
+  <div class="field">
+    <label>제목</label>
+    <input id="f-title" placeholder="공지 제목">
+  </div>
+  <div class="field">
+    <label>내용</label>
+    <textarea id="f-content" placeholder="공지 내용"></textarea>
+  </div>
+  <div class="field">
+    <label>작성자 회원 ID (원장·강사, 선택)</label>
+    <input id="f-author" placeholder="예: 1">
+  </div>
+  <div class="field">
+    <label>첨부파일명 (메타데이터만, 선택)</label>
+    <input id="f-attach-name" placeholder="예: 방학특강-안내.pdf">
+    <div class="hint">4단계에서는 파일명·키 메타데이터만 저장합니다. 실제 파일 업로드는 미지원.</div>
+  </div>
+  <div class="field">
+    <label>첨부파일 키 (선택)</label>
+    <input id="f-attach-key" placeholder="예: notices/1/notice-1.pdf">
+  </div>
+  <button class="btn" onclick="submitNotice()">공지 등록 · 알림 발송</button>
+</div>
+
+<script src="../components/api-client.js"></script>
+<script>
+var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+
+function showMsg(text, ok) {
+  const m = document.getElementById('msg');
+  m.className = 'msg ' + (ok ? 'ok' : 'err');
+  m.textContent = text;
+}
+
+function toggleClass() {
+  const isClass = document.getElementById('f-scope').value === 'CLASS';
+  document.getElementById('class-field').style.display = isClass ? 'block' : 'none';
+}
+
+async function loadClasses() {
+  try {
+    const res = await apiGet(`/1/classes`);
+    const data = await res.json();
+    if (!res.ok) return;
+    const sel = document.getElementById('f-class');
+    data.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.id;
+      opt.textContent = c.name;
+      sel.appendChild(opt);
+    });
+  } catch (e) { /* 무시 */ }
+}
+
+async function submitNotice() {
+  const scope = document.getElementById('f-scope').value;
+  const title = document.getElementById('f-title').value.trim();
+  const content = document.getElementById('f-content').value.trim();
+  if (!title) { showMsg('제목을 입력하세요.', false); return; }
+  if (!content) { showMsg('내용을 입력하세요.', false); return; }
+
+  let classId = null;
+  if (scope === 'CLASS') {
+    classId = document.getElementById('f-class').value;
+    if (!classId) { showMsg('반을 선택하세요.', false); return; }
+    classId = Number(classId);
+  }
+  const authorRaw = document.getElementById('f-author').value.trim();
+  const body = {
+    classId: classId,
+    title: title,
+    content: content,
+    authorId: authorRaw ? Number(authorRaw) : null,
+    attachmentFileName: document.getElementById('f-attach-name').value.trim() || null,
+    attachmentFileKey: document.getElementById('f-attach-key').value.trim() || null
+  };
+  try {
+    const res = await apiPost(`/1/notices`, body);
+    const data = await res.json();
+    if (!res.ok) { showMsg(data.message || '등록 실패', false); return; }
+    const n = data.notice;
+    let msg = `등록 완료 (공지 #${n.id}) · 알림 발송 ${data.notificationSentCount}건`;
+    if (data.notificationFailedCount > 0) msg += `, 실패 ${data.notificationFailedCount}건`;
+    if (data.notificationSkippedCount > 0) msg += `, 생략 ${data.notificationSkippedCount}건`;
+    if (data.notificationError) msg += ` · 알림 오류: ${data.notificationError}`;
+    showMsg(msg, true);
+    document.getElementById('f-title').value = '';
+    document.getElementById('f-content').value = '';
+  } catch (e) {
+    showMsg('서버 연결 실패: ' + e.message, false);
+  }
+}
+
+loadClasses();
+</script>
+</body>
+</html>

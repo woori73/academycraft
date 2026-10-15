@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AcademyCraft - 숙제 검사 - HW-02</title>
+<style>
+  /* 최소 기능 UI. 디자인 차별화는 2차. 업무 로직과 분리. */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, sans-serif; background: #f5f5f5; padding: 16px; }
+  .header { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+  .header h1 { font-size: 20px; }
+  .card { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 12px; }
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 13px; color: #555; margin-bottom: 6px; font-weight: bold; }
+  .field input, .field select { width: 100%; padding: 10px; border: 1px solid #ddd;
+                               border-radius: 8px; font-size: 14px; }
+  .btn { padding: 12px 20px; background: #0066cc; color: #fff; border: none;
+         border-radius: 8px; cursor: pointer; font-size: 15px; }
+  .btn-sm { padding: 6px 12px; font-size: 13px; width: auto; }
+  .btn-ghost { background: #fff; color: #0066cc; border: 1px solid #0066cc; }
+  .nav { margin-bottom: 16px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .msg { padding: 10px; border-radius: 8px; margin-bottom: 12px; display: none; }
+  .msg.ok { display: block; background: #e6f4ea; color: #1a7f37; }
+  .msg.err { display: block; background: #fce8e6; color: #c5221f; }
+  .check-row { display: flex; gap: 8px; align-items: center; padding: 10px 0;
+               border-bottom: 1px solid #eee; flex-wrap: wrap; }
+  .check-row:last-child { border-bottom: none; }
+  .check-row .name { font-weight: bold; min-width: 80px; }
+  .badge { font-size: 12px; padding: 3px 10px; border-radius: 12px; }
+  .badge.done { background: #e6f4ea; color: #1a7f37; }
+  .badge.undone { background: #fce8e6; color: #c5221f; }
+  .badge.none { background: #eee; color: #666; }
+  .empty { color: #888; font-size: 14px; text-align: center; padding: 24px; }
+  .hint { font-size: 12px; color: #888; margin-top: 4px; }
+  select.status { width: auto; padding: 6px 10px; }
+  input.mini { width: 90px; padding: 6px 10px; border: 1px solid #ddd; border-radius: 8px; }
+
+  /* [Phase5-Task4] 모바일 터치 영역 보강 (480px 이하) */
+  @media (max-width: 480px) {
+    button, .btn { min-height: 44px; }
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+    select, textarea { min-height: 44px; font-size: 16px; }
+    input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-width: 0; flex: none; accent-color: #0066cc; }
+  }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>숙제 검사</h1>
+  <p style="color:#666;font-size:13px;margin-top:4px;">REA 6단계 구현 - HW-02 · 강사 · 제출 확인·검사 결과 입력 (완료/미완료/점수)</p>
+</div>
+
+<div class="nav">
+  <a href="HW-01-homework-form.html" class="btn btn-ghost btn-sm">숙제 등록</a>
+  <a href="HW-02-homework-check.html" class="btn btn-sm">숙제 검사</a>
+  <a href="HW-03-homework-list.html" class="btn btn-ghost btn-sm">숙제 안내</a>
+</div>
+
+<div class="msg" id="msg"></div>
+
+<div class="card">
+  <div class="field">
+    <label>숙제 선택</label>
+    <select id="f-homework" onchange="loadChecks()"><option value="">숙제 선택</option></select>
+  </div>
+</div>
+
+<div class="card" id="check-list"><div class="empty">숙제를 선택하세요.</div></div>
+
+<div class="card">
+  <div class="field">
+    <label>검사 대상 학생</label>
+    <select id="f-student"><option value="">학생 선택</option></select>
+  </div>
+  <div class="field">
+    <label>검사 결과</label>
+    <select id="f-status" class="status">
+      <option value="COMPLETED">완료</option>
+      <option value="INCOMPLETE">미완료</option>
+    </select>
+  </div>
+  <div class="field">
+    <label>점수 (선택)</label>
+    <input id="f-score" type="number" min="0" class="mini" placeholder="예: 90">
+  </div>
+  <div class="field">
+    <label>코멘트 (선택)</label>
+    <input id="f-comment" placeholder="예: 풀이 과정이 깔끔해요">
+  </div>
+  <button class="btn" onclick="submitCheck()">검사 결과 저장</button>
+  <div class="hint">같은 숙제·학생은 재검사 시 결과가 갱신됩니다.</div>
+</div>
+
+<script src="../components/api-client.js"></script>
+<script>
+var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+
+function showMsg(text, ok) {
+  const m = document.getElementById('msg');
+  m.className = 'msg ' + (ok ? 'ok' : 'err');
+  m.textContent = text;
+}
+
+async function loadOptions() {
+  try {
+    const [hr, sr] = await Promise.all([
+      apiGet(`/1/homework`), apiGet(`/1/students`)
+    ]);
+    const homeworks = await hr.json();
+    const students = await sr.json();
+    if (hr.ok) {
+      const sel = document.getElementById('f-homework');
+      homeworks.forEach(h => {
+        const opt = document.createElement('option');
+        opt.value = h.id;
+        const target = h.className ? `[${h.className}]` : (h.studentName || '');
+        opt.textContent = `${h.title} ${target} (마감 ${h.dueDate})`;
+        sel.appendChild(opt);
+      });
+    }
+    if (sr.ok) {
+      const sel = document.getElementById('f-student');
+      students.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.id;
+        opt.textContent = s.name;
+        sel.appendChild(opt);
+      });
+    }
+  } catch (e) { /* 무시 */ }
+}
+
+async function loadChecks() {
+  const homeworkId = document.getElementById('f-homework').value;
+  const box = document.getElementById('check-list');
+  if (!homeworkId) { box.innerHTML = '<div class="empty">숙제를 선택하세요.</div>'; return; }
+  try {
+    const res = await apiGet(`/1/homework/${homeworkId}/checks`);
+    const data = await res.json();
+    if (!res.ok) { showMsg(data.message || '조회 실패', false); return; }
+    if (data.length === 0) {
+      box.innerHTML = '<div class="empty">검사 결과가 없습니다.</div>';
+      return;
+    }
+    box.innerHTML = '';
+    data.forEach(c => {
+      const row = document.createElement('div');
+      row.className = 'check-row';
+      const badge = c.status === 'COMPLETED'
+        ? '<span class="badge done">완료</span>'
+        : '<span class="badge undone">미완료</span>';
+      const score = (c.score !== null && c.score !== undefined) ? ` · ${c.score}점` : '';
+      const comment = c.comment ? ` · ${escapeHtml(c.comment)}` : '';
+      row.innerHTML = `<span class="name">${escapeHtml(c.studentName)}</span>${badge}<span>${score}${comment}</span>`;
+      box.appendChild(row);
+    });
+  } catch (e) {
+    showMsg('서버 연결 실패', false);
+  }
+}
+
+async function submitCheck() {
+  const homeworkId = document.getElementById('f-homework').value;
+  const studentId = document.getElementById('f-student').value;
+  if (!homeworkId) { showMsg('숙제를 선택하세요.', false); return; }
+  if (!studentId) { showMsg('학생을 선택하세요.', false); return; }
+  const score = document.getElementById('f-score').value;
+  const body = {
+    studentId: Number(studentId),
+    status: document.getElementById('f-status').value,
+    score: score === '' ? null : Number(score),
+    comment: document.getElementById('f-comment').value.trim() || null
+  };
+  try {
+    const res = await apiPost(`/1/homework/${homeworkId}/check`, body);
+    const data = await res.json();
+    if (!res.ok) { showMsg(data.message || '저장 실패', false); return; }
+    showMsg(`검사 저장 완료 (${data.studentName} · ${data.statusLabel})`, true);
+    document.getElementById('f-score').value = '';
+    document.getElementById('f-comment').value = '';
+    loadChecks();
+  } catch (e) {
+    showMsg('서버 연결 실패', false);
+  }
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+loadOptions();
+</script>
+</body>
+</html>

@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AcademyCraft - 반 상세</title>
+<style>
+  /* 최소 기능 UI. 디자인 차별화는 2차. 업무 로직과 분리. */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, sans-serif; background: #f5f5f5; padding: 16px; }
+  .header { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+  .header h1 { font-size: 20px; }
+  .nav { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .nav a { font-size: 13px; color: #0066cc; text-decoration: none; padding: 6px 10px; border: 1px solid #cfe0f5; border-radius: 6px; background: #f0f6ff; }
+  .card { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+  .card h2 { font-size: 16px; margin-bottom: 12px; }
+  .info-row { font-size: 14px; color: #333; margin-bottom: 6px; }
+  .info-row .k { color: #777; display: inline-block; width: 90px; }
+  .student-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #eee; gap: 8px; flex-wrap: wrap; }
+  .student-row:last-child { border-bottom: none; }
+  .student-name { font-weight: bold; font-size: 15px; }
+  .student-sub { font-size: 13px; color: #666; }
+  .btn { padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; background: #fff; cursor: pointer; font-size: 14px; }
+  .btn-primary { background: #0066cc; color: #fff; border-color: #0066cc; }
+  .btn-danger { color: #c00; border-color: #e5b3b3; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  #assign-box { display: none; margin-top: 12px; border-top: 1px solid #eee; padding-top: 12px; }
+  #assign-box .cand { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 14px; }
+  .move-box { display: flex; gap: 6px; align-items: center; }
+  .move-box select { padding: 6px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; max-width: 140px; }
+  @media (max-width: 600px) {
+    .student-row { flex-direction: column; align-items: stretch; }
+    .actions .btn { flex: 1; }
+  }
+  @media (max-width: 480px) {
+    button, .btn { min-height: 44px; }
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+    select, textarea { min-height: 44px; font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1 id="class-name">반 상세</h1>
+  <p style="color:#666;font-size:13px;margin-top:4px;">REA 1차 구현 - CLS-03</p>
+  <div class="nav">
+    <a href="CLS-01-class-list.html">반 목록</a>
+    <a href="timetable-weekly.html">주간 시간표</a>
+    <a href="MBR-01-student-list.html">학생 관리</a>
+  </div>
+</div>
+
+<div class="card">
+  <h2>반 정보</h2>
+  <div id="info"></div>
+  <div class="actions" style="margin-top:12px;">
+    <button class="btn" id="btn-edit">수정</button>
+    <button class="btn-danger btn" id="btn-close">반 종료</button>
+  </div>
+</div>
+
+<div class="card">
+  <h2>소속 학생 <span id="student-count" style="font-weight:normal;color:#666;"></span></h2>
+  <div id="students"></div>
+  <div class="actions" style="margin-top:12px;">
+    <button class="btn-primary btn" onclick="toggleAssign()">+ 학생 배정</button>
+  </div>
+  <div id="assign-box">
+    <div id="candidates"></div>
+    <div class="actions" style="margin-top:8px;">
+      <button class="btn-primary btn" onclick="assignSelected()">배정하기</button>
+      <button class="btn" onclick="toggleAssign()">취소</button>
+    </div>
+  </div>
+</div>
+
+<script src="../components/api-client.js"></script>
+<script>
+var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+const classId = new URLSearchParams(location.search).get('id');
+const DAY_LABEL = { MON: '월', TUE: '화', WED: '수', THU: '목', FRI: '금', SAT: '토', SUN: '일' };
+let classData = null;
+let otherClasses = [];
+
+if (!classId) { alert('반 ID가 없습니다.'); location.href = 'CLS-01-class-list.html'; }
+
+function scheduleText(c) {
+  const days = (c.weekdays || []).map(d => DAY_LABEL[d] || d).join('·');
+  const time = (c.startTime && c.endTime) ? `${c.startTime}~${c.endTime}` : '시간 미정';
+  return [days, time, c.room].filter(Boolean).join(' / ');
+}
+
+async function loadDetail() {
+  const res = await apiGet(`/1/classes/${classId}`);
+  if (!res.ok) { alert('반을 찾을 수 없습니다.'); location.href = 'CLS-01-class-list.html'; return; }
+  classData = await res.json();
+  document.getElementById('class-name').textContent = classData.name + (classData.active ? '' : ' [종료]');
+  document.getElementById('info').innerHTML = `
+    <div class="info-row"><span class="k">설명</span>${escapeHtml(classData.description || '-')}</div>
+    <div class="info-row"><span class="k">담당 강사</span>${escapeHtml(classData.teacherName || '-')}</div>
+    <div class="info-row"><span class="k">시간표</span>${escapeHtml(scheduleText(classData))}</div>
+    <div class="info-row"><span class="k">정원</span>${classData.capacity ? classData.capacity + '명' : '무제한'}</div>
+  `;
+  document.getElementById('btn-edit').onclick = () => location.href = `CLS-02-class-form.html?id=${classId}`;
+  document.getElementById('btn-close').style.display = classData.active ? '' : 'none';
+
+  const students = classData.students || [];
+  document.getElementById('student-count').textContent = `(${students.length}명)`;
+  document.getElementById('students').innerHTML = students.map(s => `
+    <div class="student-row">
+      <div>
+        <div class="student-name">${escapeHtml(s.name)}</div>
+        <div class="student-sub">${escapeHtml(s.grade || '')} ${escapeHtml(s.parentName ? '· ' + s.parentName : '')}</div>
+      </div>
+      <div class="actions">
+        <div class="move-box">
+          <select id="move-${s.id}">
+            <option value="">반 이동...</option>
+            ${otherClasses.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}
+          </select>
+          <button class="btn" onclick="moveStudent(${s.id})">이동</button>
+        </div>
+        <button class="btn" onclick="removeStudent(${s.id})">제외</button>
+      </div>
+    </div>
+  `).join('') || '<p style="color:#999;">소속 학생이 없습니다.</p>';
+}
+
+async function loadOtherClasses() {
+  const res = await apiGet(`/1/classes`);
+  const classes = await res.json();
+  otherClasses = classes.filter(c => String(c.id) !== String(classId));
+}
+
+function toggleAssign() {
+  const box = document.getElementById('assign-box');
+  box.style.display = box.style.display === 'none' ? 'block' : 'none';
+  if (box.style.display === 'block') loadCandidates();
+}
+
+async function loadCandidates() {
+  const res = await apiGet(`/1/students`);
+  const all = await res.json();
+  const enrolled = new Set((classData.students || []).map(s => s.id));
+  const candidates = all.filter(s => !enrolled.has(s.id));
+  document.getElementById('candidates').innerHTML = candidates.map(s => `
+    <label class="cand"><input type="checkbox" value="${s.id}">
+      ${escapeHtml(s.name)} <span style="color:#888;">${escapeHtml(s.grade || '')}</span>
+    </label>
+  `).join('') || '<p style="color:#999;">배정 가능한 학생이 없습니다.</p>';
+}
+
+async function assignSelected() {
+  const ids = [...document.querySelectorAll('#candidates input:checked')].map(el => Number(el.value));
+  if (!ids.length) { alert('배정할 학생을 선택하세요.'); return; }
+  const res = await apiPost(`/1/classes/${classId}/students`, { studentIds: ids });
+  if (!res.ok) { alert('배정 실패: ' + await res.text()); return; }
+  toggleAssign();
+  loadDetail();
+}
+
+async function removeStudent(studentId) {
+  const s = (classData.students || []).find(x => x.id === studentId);
+  const name = s ? s.name : '';
+  if (!confirm(`'${name}' 학생을 이 반에서 제외하시겠습니까?`)) return;
+  const res = await apiDelete(`/1/classes/${classId}/students/${studentId}`);
+  if (!res.ok) { alert('제외 실패: ' + await res.text()); return; }
+  loadDetail();
+}
+
+async function moveStudent(studentId) {
+  const sel = document.getElementById(`move-${studentId}`);
+  const toClassId = sel.value;
+  if (!toClassId) { alert('이동할 반을 선택하세요.'); return; }
+  if (!confirm('선택한 반으로 이동하시겠습니까?')) return;
+  const res = await apiPost(`/1/classes/${classId}/students/${studentId}/move`, { toClassId: Number(toClassId) });
+  if (!res.ok) { alert('이동 실패: ' + await res.text()); return; }
+  loadDetail();
+}
+
+async function closeClass() {
+  if (!confirm('반을 종료하시겠습니까? 소속 학생 배정이 모두 해제됩니다.')) return;
+  const res = await apiPost(`/1/classes/${classId}/close`);
+  if (!res.ok) { alert('종료 실패: ' + await res.text()); return; }
+  loadDetail();
+}
+document.getElementById('btn-close').onclick = closeClass;
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+
+(async function init() {
+  await loadOtherClasses();
+  await loadDetail();
+})();
+</script>
+</body>
+</html>

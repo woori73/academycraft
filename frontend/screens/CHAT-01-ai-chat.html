@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AcademyCraft - AI 학원 비서 - CHAT-01</title>
+<style>
+  /* 최소 기능 UI. 디자인 차별화는 2차. 업무 로직과 분리. */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, sans-serif; background: #f5f5f5;
+         height: 100vh; display: flex; flex-direction: column; }
+
+  .header { background: #fff; padding: 12px 16px; border-bottom: 1px solid #ddd;
+            display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .header h1 { font-size: 18px; }
+  .header .sub { font-size: 12px; color: #666; }
+  .header .role { font-size: 12px; color: #1a7f37; background: #e6f4ea;
+                  padding: 3px 8px; border-radius: 10px; white-space: nowrap; }
+  .auth-bar { display: flex; gap: 6px; align-items: center; margin-left: auto;
+              font-size: 12px; flex-wrap: wrap; }
+  .auth-bar input { padding: 8px; font-size: 13px; border: 1px solid #ccc;
+                    border-radius: 6px; width: 160px; }
+
+  .btn { padding: 10px 18px; background: #0066cc; color: #fff; border: none;
+         border-radius: 8px; cursor: pointer; font-size: 15px; }
+  .btn:disabled { background: #9ec1e8; cursor: default; }
+  .btn-sm { padding: 6px 12px; font-size: 13px; }
+  .btn-ghost { background: #fff; color: #0066cc; border: 1px solid #0066cc; }
+  .btn-warn { background: #b45309; }
+
+  .tools-toggle { background: #fff; border-bottom: 1px solid #ddd; }
+  .tools-toggle summary { padding: 10px 16px; cursor: pointer; font-size: 14px;
+                          font-weight: bold; list-style: none; }
+  .tools-toggle summary::-webkit-details-marker { display: none; }
+  .tools-panel { padding: 0 16px 14px; display: grid; gap: 8px;
+                 grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+  .tool-card { background: #f8f9fa; border: 1px solid #e3e3e3; border-radius: 8px;
+               padding: 10px 12px; font-size: 13px; }
+  .tool-card .tname { font-weight: bold; color: #0066cc; }
+  .tool-card .twrite { font-size: 11px; background: #fce8e6; color: #c5221f;
+                       padding: 2px 6px; border-radius: 8px; margin-left: 6px; }
+  .tool-card .tread { font-size: 11px; background: #e6f4ea; color: #1a7f37;
+                      padding: 2px 6px; border-radius: 8px; margin-left: 6px; }
+  .tool-card .ex { color: #666; margin-top: 4px; cursor: pointer; }
+  .tool-card .ex:hover { color: #0066cc; text-decoration: underline; }
+
+  #messages { flex: 1; overflow-y: auto; padding: 16px; display: flex;
+              flex-direction: column; gap: 10px; }
+  .bubble { max-width: 85%; padding: 10px 14px; border-radius: 14px;
+            font-size: 14px; line-height: 1.55; word-break: break-word; }
+  .user { align-self: flex-end; background: #0066cc; color: #fff;
+          border-bottom-right-radius: 4px; }
+  .agent { align-self: flex-start; background: #fff; color: #222;
+           border-bottom-left-radius: 4px; border: 1px solid #e3e3e3;
+           width: 100%; max-width: 92%; }
+  .agent .tool-badge { display: inline-block; font-size: 11px; background: #e8f0fe;
+                       color: #1a56db; padding: 2px 8px; border-radius: 10px;
+                       margin-bottom: 6px; }
+  .agent .pending { background: #fff8e6; border: 1px solid #f0d060;
+                    border-radius: 8px; padding: 10px; margin-top: 8px; }
+  .agent .err { color: #c5221f; }
+  .agent .sugg { margin-top: 8px; }
+  .agent .sugg .chip { display: inline-block; background: #e8f0fe; color: #1a56db;
+                       padding: 5px 10px; border-radius: 14px; font-size: 12px;
+                       margin: 3px 4px 0 0; cursor: pointer; border: 1px solid #c3d6fb; }
+
+  table.data { width: 100%; border-collapse: collapse; font-size: 13px;
+               margin-top: 8px; }
+  table.data th, table.data td { border: 1px solid #ddd; padding: 7px 8px;
+                                 text-align: left; }
+  table.data th { background: #f0f4f8; }
+  table.data a { color: #0066cc; }
+
+  .stat-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .stat-box { background: #f8f9fa; border-radius: 8px; padding: 8px 12px;
+              font-size: 13px; text-align: center; min-width: 80px; }
+  .stat-box .n { font-size: 20px; font-weight: bold; }
+  .stat-box .t { font-size: 11px; color: #666; margin-top: 2px; }
+
+  .bar-row { display: flex; align-items: center; gap: 8px; font-size: 13px;
+             margin: 6px 0; }
+  .bar-row .sbj { width: 90px; flex-shrink: 0; }
+  .bar-row .barwrap { flex: 1; background: #eee; border-radius: 4px; height: 16px;
+                      overflow: hidden; }
+  .bar-row .bar { height: 100%; background: #0066cc; }
+  .bar-row .val { width: 120px; flex-shrink: 0; text-align: right; color: #555; }
+  .trend-up { color: #1a7f37; } .trend-down { color: #c5221f; }
+  .trend-flat { color: #888; }
+
+  .authkey-box { background: #f0f4f8; border-radius: 8px; padding: 10px;
+                 margin-top: 8px; font-size: 13px; display: flex; gap: 8px;
+                 align-items: center; flex-wrap: wrap; }
+  .authkey-box code { background: #fff; border: 1px dashed #999; padding: 4px 8px;
+                      border-radius: 4px; font-size: 13px; }
+  .link-row { margin-top: 8px; font-size: 13px; }
+  .link-row a { color: #0066cc; margin-right: 10px; }
+  .report-text { white-space: pre-line; font-size: 13px; background: #f8f9fa;
+                 border-radius: 8px; padding: 10px; margin-top: 8px; }
+  pre.json { font-size: 12px; background: #f8f9fa; border-radius: 8px;
+             padding: 10px; margin-top: 8px; overflow-x: auto; }
+
+  .input-bar { background: #fff; border-top: 1px solid #ddd; padding: 10px 16px;
+               display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .input-bar input[type=text] { flex: 1; min-width: 180px; padding: 12px;
+                                font-size: 15px; border: 1px solid #ccc;
+                                border-radius: 8px; }
+  .approve { display: flex; align-items: center; gap: 6px; font-size: 13px;
+             color: #555; white-space: nowrap; }
+  .approve input { width: 16px; height: 16px; }
+  .typing { align-self: flex-start; color: #888; font-size: 13px;
+            font-style: italic; }
+  .ctx-note { font-size: 11px; color: #999; text-align: center; padding: 4px 0 0; }
+  @media (max-width: 600px) {
+    .bubble { max-width: 95%; }
+    .agent { max-width: 100%; }
+    .auth-bar input { width: 120px; }
+  }
+
+  /* [Phase5-Task4] 모바일 터치 영역 보강 (480px 이하) */
+  @media (max-width: 480px) {
+    button, .btn { min-height: 44px; }
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+    select, textarea { min-height: 44px; font-size: 16px; }
+    input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-width: 0; flex: none; accent-color: #0066cc; }
+
+    table.data { display: block; overflow-x: auto; }
+    .approve { padding: 12px 4px; }
+    .auth-bar { row-gap: 8px; }
+    #authKey { flex: 1; min-width: 0; width: auto; }  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>AI 학원 비서</h1>
+    <div class="sub">AcademyCraft · 자연어 명령으로 Agent 실행</div>
+  </div>
+  <span class="role">원장 · 강사 전용 (학부모 접근 불가)</span>
+  <div class="auth-bar">
+    <label>학원ID <input type="number" id="academyId" value="1" min="1"
+      style="width:56px;padding:8px;" title="URL 경로의 {academyId}"></label>
+    <input type="password" id="authKey" placeholder="X-Auth-Key 인증키 입력"
+      autocomplete="off">
+    <button class="btn btn-sm btn-ghost" onclick="saveAuthKey()">저장</button>
+  </div>
+</div>
+
+<details class="tools-toggle">
+  <summary>🧰 사용 가능한 도구 7개 · 예시 명령 보기 (클릭하여 펼치기)</summary>
+  <div class="tools-panel" id="toolsPanel"></div>
+</details>
+
+<div id="messages"></div>
+<div class="ctx-note" id="ctxNote"></div>
+
+<div class="input-bar">
+  <input type="text" id="cmdInput" placeholder='예: "오늘 결석한 학생을 정리해 줘"'
+    onkeydown="if(event.key==='Enter')sendCmd()">
+  <label class="approve" title="쓰기 도구(학생 등록·반 배정·공지 초안)를 승인 없이 재요청 없이 바로 실행">
+    <input type="checkbox" id="writeApproved"> 쓰기 승인
+  </label>
+  <button class="btn" id="sendBtn" onclick="sendCmd()">전송</button>
+</div>
+
+<script>
+'use strict';
+
+/* ---------- 설정 ---------- */
+const API_BASE = '/api/rea';  // + '/' + academyId
+const LS_KEY = 'rea_auth_key';
+const LS_ACADEMY = 'rea-chat-academy-id';
+
+/* ---------- 대화 컨텍스트 (페이지 세션 메모리, 리로드 시 초기화) ---------- */
+const MAX_TURNS = 20;
+const turns = [];              // [{command, toolUsed, ok}]
+let lastIds = {};              // 최근 성공 결과의 주요 ID: {studentId, studentName, classId, className, noticeId, homeworkId, authKey}
+let pendingCmd = null;          // requiresApproval 대기 중인 명령
+
+function apiUrl() {
+  return API_BASE + '/' + (document.getElementById('academyId').value || 1);
+}
+function authKey() {
+  return document.getElementById('authKey').value.trim();
+}
+function authHeaders() {
+  return { 'Content-Type': 'application/json', 'X-Auth-Key': authKey() };
+}
+
+/* 지시어(아까/그/저/방금) 감지 시 최근 성공 결과의 ID를 명령에 주입.
+   CommandParser는 "학생 12" / "2반" 같은 숫자 패턴을 인식한다. */
+function resolveContext(cmd) {
+  if (Object.keys(lastIds).length === 0) return cmd;
+  if (!/(아까|방금|그 학생|저 학생|그 아이|그 반|저 반|그 공지|저 공지|그 숙제)/.test(cmd)) return cmd;
+  let hint = '';
+  if (/(아까|방금)/.test(cmd)) {
+    if (lastIds.studentId) hint = `(학생 ${lastIds.studentId})`;
+    else if (lastIds.noticeId) hint = `(공지 ${lastIds.noticeId})`;
+    else if (lastIds.classId) hint = `(반 ${lastIds.classId})`;
+  }
+  if (/(그 학생|저 학생|그 아이)/.test(cmd) && lastIds.studentId)
+    hint = `(학생 ${lastIds.studentId})`;
+  if (/(그 반|저 반)/.test(cmd) && lastIds.classId)
+    hint = `(반 ${lastIds.classId})`;
+  if (/(그 공지|저 공지)/.test(cmd) && lastIds.noticeId)
+    hint = `(공지 ${lastIds.noticeId})`;
+  if (/(그 숙제)/.test(cmd) && lastIds.homeworkId)
+    hint = `(숙제 ${lastIds.homeworkId})`;
+  if (hint) {
+    const resolved = cmd + ' ' + hint;
+    noteCtx(`대화 컨텍스트 적용: "${hint}" (최근 결과 참조)`);
+    return resolved;
+  }
+  return cmd;
+}
+
+function rememberResult(toolUsed, result) {
+  if (!result || typeof result !== 'object') return;
+  const keep = {};
+  ['studentId', 'studentName', 'classId', 'className',
+   'noticeId', 'homeworkId', 'authKey'].forEach(k => {
+    if (result[k] != null) keep[k] = result[k];
+  });
+  if (Object.keys(keep).length > 0) {
+    lastIds = keep;
+    noteCtx('컨텍스트 저장: ' + Object.entries(keep)
+      .map(([k, v]) => `${k}=${v}`).join(', '));
+  }
+}
+
+function noteCtx(text) {
+  document.getElementById('ctxNote').textContent = text;
+}
+
+/* ---------- 도구 목록 패널 ---------- */
+const TOOLS = [
+  { name: 'registerStudent', write: true,
+    desc: '학생 등록 + 인증키 발급. 반 ID가 있으면 등록 직후 반에 배정.',
+    examples: ['학생 등록 김철수', '"이름: 김철수" 학생 등록', '학생 등록 "홍길동" 반 2'] },
+  { name: 'assignStudentToClass', write: true,
+    desc: '학생을 지정된 반에 배정.',
+    examples: ['학생 3을 2반에 배정해줘'] },
+  { name: 'getStudents', write: false,
+    desc: '학원·반 학생 목록 (이름·학년).',
+    examples: ['영어반 학생 목록 보여줘', '학생 목록 보여줘'] },
+  { name: 'getAbsentStudents', write: false,
+    desc: '지정 날짜의 결석 학생 목록 (기본 오늘).',
+    examples: ['오늘 결석한 학생을 정리해 줘', '어제 결석자 조회', '2026-10-12 결석 학생'] },
+  { name: 'getHomeworkIncomplete', write: false,
+    desc: '반의 숙제 미제출 학생 목록.',
+    examples: ['3반 숙제 미제출 학생 확인', '숙제 5 미제출자'] },
+  { name: 'createNoticeDraft', write: true,
+    desc: '공지 초안 작성. 학부모 알림은 발송하지 않음 (제목에 [초안]).',
+    examples: ['전체 공지 초안 작성 "방학 안내"', '공지 작성 "시험 일정" 내용: 다음 주 화요일'] },
+  { name: 'analyzeGradeChanges', write: false,
+    desc: '학생 성적 변화 분석 (과목별 평균·첫/최근 성적·추이).',
+    examples: ['학생 5 성적 변화 추이', '성적 분석해줘'] },
+  { name: 'generateOperationReport', write: false,
+    desc: '학원 운영 현황 보고서 (출결률·공지·상담 집계).',
+    examples: ['운영 보고서 만들어줘', '최근 7일 현황 보고서'] },
+];
+
+function renderToolsPanel() {
+  document.getElementById('toolsPanel').innerHTML = TOOLS.map(t => `
+    <div class="tool-card">
+      <span class="tname">${t.name}</span>
+      <span class="${t.write ? 'twrite' : 'tread'}">${t.write ? '쓰기' : '읽기'}</span>
+      <div>${t.desc}</div>
+      <div>${t.examples.map(e =>
+        `<div class="ex" onclick="fillExample(${JSON.stringify(e).replace(/"/g, '&quot;')})">▶ ${escapeHtml(e)}</div>`
+      ).join('')}</div>
+    </div>`).join('');
+}
+
+function fillExample(ex) {
+  document.getElementById('cmdInput').value = ex;
+  document.getElementById('cmdInput').focus();
+}
+
+/* ---------- 메시지 렌더링 ---------- */
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function addUserBubble(text) {
+  const el = document.createElement('div');
+  el.className = 'bubble user';
+  el.textContent = text;
+  document.getElementById('messages').appendChild(el);
+  scrollBottom();
+}
+
+function addAgentBubble(html) {
+  const el = document.createElement('div');
+  el.className = 'bubble agent';
+  el.innerHTML = html;
+  document.getElementById('messages').appendChild(el);
+  scrollBottom();
+  return el;
+}
+
+function showTyping() {
+  const el = document.createElement('div');
+  el.className = 'typing';
+  el.id = 'typing';
+  el.textContent = 'Agent가 처리 중입니다…';
+  document.getElementById('messages').appendChild(el);
+  scrollBottom();
+}
+function hideTyping() {
+  const t = document.getElementById('typing');
+  if (t) t.remove();
+}
+function scrollBottom() {
+  const m = document.getElementById('messages');
+  m.scrollTop = m.scrollHeight;
+}
+
+/* 관리 화면 링크 */
+function linksFor(r) {
+  const out = [];
+  if (r && r.studentId)
+    out.push(`<a href="MBR-01-student-list.html" target="_blank">학생 관리</a>`);
+  if (r && r.classId)
+    out.push(`<a href="CLS-03-class-detail.html" target="_blank">반 상세</a>`);
+  if (r && r.noticeId)
+    out.push(`<a href="NTC-04-notice-detail.html" target="_blank">공지 상세</a>`);
+  if (r && r.homeworkId)
+    out.push(`<a href="HW-03-homework-list.html" target="_blank">숙제 목록</a>`);
+  return out.length ? `<div class="link-row">관련 화면: ${out.join('')}</div>` : '';
+}
+
+/* ---------- 도구별 결과 렌더링 ---------- */
+function renderResult(toolUsed, result) {
+  if (!result || typeof result !== 'object')
+    return `<div>${escapeHtml(String(result))}</div>`;
+
+  switch (toolUsed) {
+    case 'getStudents': {
+      const list = result.students || [];
+      if (list.length === 0)
+        return `<div>학생이 없습니다. (${escapeHtml(result.className || '전체')})</div>`;
+      return `
+        <div><b>${escapeHtml(result.className || '전체 학원')}</b> 학생 <b>${result.count || list.length}명</b></div>
+        <table class="data"><tr><th>이름</th><th>학년</th></tr>
+        ${list.map(s => `<tr><td>${escapeHtml(s.studentName)}</td>
+          <td>${escapeHtml(s.grade || '-')}</td></tr>`).join('')}
+        </table>
+        <div class="link-row"><a href="MBR-01-student-list.html" target="_blank">학생 관리</a></div>`;
+    }
+
+    case 'getAbsentStudents': {
+      const list = result.absentees || [];
+      if (list.length === 0)
+        return `<div>결석 학생이 없습니다. (${escapeHtml(result.date || '')})</div>`;
+      return `
+        <div><b>${escapeHtml(result.date || '')}</b> 결석 학생 <b>${result.count || list.length}명</b></div>
+        <table class="data"><tr><th>이름</th><th>반</th></tr>
+        ${list.map(a => `<tr><td>${escapeHtml(a.studentName)}</td>
+          <td>${escapeHtml(a.className || a.classId || '-')}</td></tr>`).join('')}
+        </table>
+        <div class="link-row"><a href="ATT-03-attendance-roster.html" target="_blank">출결 명부 화면</a>
+        <a href="MBR-01-student-list.html" target="_blank">학생 관리 (연락처 확인)</a></div>
+        <div style="font-size:12px;color:#888;margin-top:4px;">
+          학부모 연락처는 Agent API가 반환하지 않습니다. 학생 관리 화면에서 확인하세요.</div>`;
+    }
+
+    case 'analyzeGradeChanges': {
+      const subjects = result.subjects || [];
+      const trendMark = t =>
+        t === '상승' ? '<span class="trend-up">▲ 상승</span>' :
+        t === '하락' ? '<span class="trend-down">▼ 하락</span>' :
+                       '<span class="trend-flat">– 유지</span>';
+      return `
+        <div><b>${escapeHtml(result.studentName || '')}</b> 성적 변화
+          (${escapeHtml(result.startDate || '')} ~ ${escapeHtml(result.endDate || '')},
+           기록 ${result.gradeCount || 0}건)</div>
+        <div class="stat-box" style="margin-top:8px;">
+          <div class="n">${result.overallAvgRate != null ? Math.round(result.overallAvgRate) + '%' : '-'}</div>
+          <div class="t">전체 평균 득점률</div>
+        </div>
+        ${subjects.map(s => `
+          <div class="bar-row">
+            <span class="sbj">${escapeHtml(s.subject)}</span>
+            <span class="barwrap"><span class="bar"
+              style="display:block;width:${Math.min(100, Math.round(s.avgRate || 0))}%;"></span></span>
+            <span class="val">${Math.round(s.avgRate || 0)}% ${trendMark(s.trend)}</span>
+          </div>`).join('')}
+        ${result.summary ? `<div class="report-text">${escapeHtml(result.summary)}</div>` : ''}
+        <div class="link-row"><a href="GRD-02-grade-list.html" target="_blank">성적 목록</a>
+        <a href="RPT-01-learning-report.html" target="_blank">학습 리포트</a></div>`;
+    }
+
+    case 'generateOperationReport': {
+      const r = result;
+      return `
+        <div><b>학원 운영 현황 보고서</b>
+          (${escapeHtml(r.startDate || '')} ~ ${escapeHtml(r.endDate || '')})</div>
+        <div class="stat-row">
+          <div class="stat-box"><div class="n">${r.classCount != null ? r.classCount : '-'}</div><div class="t">활성 반</div></div>
+          <div class="stat-box"><div class="n">${r.attendanceRate != null ? Math.round(r.attendanceRate * 1000) / 10 + '%' : '-'}</div><div class="t">출결률</div></div>
+          <div class="stat-box"><div class="n">${r.absentCount != null ? r.absentCount : '-'}</div><div class="t">결석</div></div>
+          <div class="stat-box"><div class="n">${r.lateCount != null ? r.lateCount : '-'}</div><div class="t">지각</div></div>
+          <div class="stat-box"><div class="n">${r.earlyLeaveCount != null ? r.earlyLeaveCount : '-'}</div><div class="t">조퇴</div></div>
+          <div class="stat-box"><div class="n">${r.noticeCount != null ? r.noticeCount : '-'}</div><div class="t">공지</div></div>
+          <div class="stat-box"><div class="n">${r.consultationCount != null ? r.consultationCount : '-'}</div><div class="t">상담</div></div>
+        </div>
+        <div style="font-size:13px;margin-top:8px;">
+          상담 — 진행중 ${r.openConsultationCount != null ? r.openConsultationCount : '-'}건 ·
+          답변완료 ${r.answeredConsultationCount != null ? r.answeredConsultationCount : '-'}건 ·
+          종료 ${r.closedConsultationCount != null ? r.closedConsultationCount : '-'}건</div>
+        ${r.report ? `<div class="report-text">${escapeHtml(r.report)}</div>` : ''}
+        <div class="link-row"><a href="OPS-02-dashboard.html" target="_blank">통계 대시보드</a></div>`;
+    }
+
+    case 'registerStudent': {
+      return `
+        <div>✅ 학생 <b>${escapeHtml(result.name)}</b> 등록됨 (학생ID: ${result.studentId})</div>
+        ${result.className ? `<div>배정 반: ${escapeHtml(result.className)}</div>` : ''}
+        <div class="authkey-box">
+          <span>인증키:</span><code>${escapeHtml(result.authKey)}</code>
+          <button class="btn btn-sm btn-ghost"
+            onclick="copyKey(${JSON.stringify(result.authKey || '')})">복사</button>
+        </div>
+        <div style="font-size:12px;color:#888;margin-top:4px;">
+          인증키를 학생·학부모에게 전달하세요. 분실 시 재발급이 필요합니다.</div>
+        ${linksFor(result)}`;
+    }
+
+    case 'assignStudentToClass': {
+      return `
+        <div>✅ 학생( ID: ${result.studentId} )을
+          <b>${escapeHtml(result.className || result.classId)}</b> 반에 배정했습니다.</div>
+        ${linksFor(result)}`;
+    }
+
+    case 'getHomeworkIncomplete': {
+      const list = result.students || [];
+      if (list.length === 0)
+        return `<div>숙제 미제출 학생이 없습니다. (${escapeHtml(result.className || '')})</div>`;
+      return `
+        <div><b>${escapeHtml(result.className || '')}</b> 숙제 미제출
+          <b>${result.incompleteCount || list.length}명</b></div>
+        <table class="data"><tr><th>이름</th><th>숙제</th></tr>
+        ${list.map(s => `<tr><td>${escapeHtml(s.studentName)}</td>
+          <td>${escapeHtml(s.homeworkTitle || s.homeworkId || '-')}</td></tr>`).join('')}
+        </table>
+        <div class="link-row"><a href="HW-02-homework-check.html" target="_blank">숙제 검사 화면</a></div>`;
+    }
+
+    case 'createNoticeDraft': {
+      return `
+        <div>✅ 공지 초안 작성됨 (공지ID: ${result.noticeId})</div>
+        <div style="margin-top:6px;"><b>${escapeHtml(result.title)}</b></div>
+        <div style="font-size:12px;color:#888;">제목에 [초안]이 붙어 있으며,
+          학부모 알림은 발송되지 않았습니다. 검수 후 별도 발송하세요.</div>
+        ${linksFor(result)}`;
+    }
+
+    default:
+      return `<pre class="json">${escapeHtml(JSON.stringify(result, null, 2))}</pre>
+        ${linksFor(result)}`;
+  }
+}
+
+function copyKey(key) {
+  const done = () => addAgentBubble('<div>인증키가 클립보드에 복사되었습니다.</div>');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(key).then(done).catch(() => fallbackCopy(key, done));
+  } else {
+    fallbackCopy(key, done);
+  }
+}
+function fallbackCopy(key, done) {
+  const ta = document.createElement('textarea');
+  ta.value = key;
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); } catch (e) { /* 무시 */ }
+  document.body.removeChild(ta);
+  done();
+}
+
+/* ---------- 응답 처리 ---------- */
+function renderAgentResponse(cmd, data) {
+  if (data.success) {
+    rememberResult(data.toolUsed, data.result);
+    addAgentBubble(`
+      <span class="tool-badge">🛠 ${escapeHtml(data.toolUsed || '')}</span>
+      <div>${escapeHtml(data.message || '실행 완료')}</div>
+      ${renderResult(data.toolUsed, data.result)}`);
+  } else if (data.requiresApproval) {
+    pendingCmd = cmd;
+    const el = addAgentBubble(`
+      <span class="tool-badge">🛠 ${escapeHtml(data.toolUsed || '')}</span>
+      <div class="err">⚠️ 승인이 필요합니다: ${escapeHtml(data.message || '')}</div>
+      <div class="pending">
+        <div style="font-size:13px;margin-bottom:8px;">
+          쓰기 작업입니다. 실행하려면 승인해 주세요.</div>
+        <button class="btn btn-sm btn-warn" onclick="approveAndRun()">
+          승인하고 실행</button>
+        <button class="btn btn-sm btn-ghost" onclick="cancelPending()">취소</button>
+      </div>`);
+    void el;
+  } else {
+    const sugg = (data.suggestions || []).map(s => {
+      const tool = TOOLS.find(t => t.name === s);
+      const ex = tool && tool.examples[0];
+      return ex
+        ? `<span class="chip" onclick="fillExample(${JSON.stringify(ex).replace(/"/g, '&quot;')})">${escapeHtml(s)}</span>`
+        : `<span class="chip">${escapeHtml(s)}</span>`;
+    }).join('');
+    addAgentBubble(`
+      <div class="err">❌ ${escapeHtml(data.message || '명령을 이해하지 못했습니다.')}</div>
+      <div style="font-size:13px;margin-top:6px;">
+        해결 방법: 도구 목록의 예시 명령처럼 구체적으로 입력해 보세요.
+        (예: "학생 등록 김철수", "오늘 결석한 학생을 정리해 줘")</div>
+      ${sugg ? `<div class="sugg">관련 도구: ${sugg} (클릭하면 예시 명령 입력)</div>` : ''}`);
+  }
+}
+
+/* ---------- 전송 ---------- */
+async function sendCmd() {
+  const input = document.getElementById('cmdInput');
+  let cmd = input.value.trim();
+  if (!cmd) return;
+
+  if (!authKey()) {
+    addAgentBubble(`<div class="err">🔑 먼저 상단의 <b>X-Auth-Key 인증키</b>를 입력하고 저장해 주세요.
+      (1단계 인증이 없으면 401 오류가 발생합니다.)</div>`);
+    document.getElementById('authKey').focus();
+    return;
+  }
+
+  pendingCmd = null;
+  const resolved = resolveContext(cmd);
+  input.value = '';
+  addUserBubble(resolved !== cmd ? `${cmd} (→ ${resolved})` : cmd);
+
+  const writeApproved = document.getElementById('writeApproved').checked;
+  const btn = document.getElementById('sendBtn');
+  btn.disabled = true;
+  showTyping();
+
+  try {
+    const res = await fetch(`${apiUrl()}/agent/execute`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ command: resolved, writeApproved }),
+    });
+    let data = null;
+    try { data = await res.json(); } catch (e) { /* 비JSON 응답 */ }
+
+    hideTyping();
+    if (res.status === 401) {
+      addAgentBubble(`<div class="err">🔑 401 인증 실패: 인증키가 올바르지 않습니다.
+        상단의 인증키를 다시 확인하고 저장해 주세요.</div>`);
+    } else if (res.status === 403) {
+      addAgentBubble(`<div class="err">⛔ 403 접근 거부: 학부모 계정은 Agent를 사용할 수 없고,
+        인증된 학원(academyId)과 다른 학원 번호는 접근할 수 없습니다.
+        원장·강사 인증키로 다시 시도하세요.</div>`);
+    } else if (!res.ok || !data) {
+      addAgentBubble(`<div class="err">서버 오류 (HTTP ${res.status}).
+        잠시 후 다시 시도하거나, 관리자에게 문의하세요.</div>`);
+    } else {
+      renderAgentResponse(cmd, data);
+    }
+    turns.push({ command: cmd, toolUsed: data && data.toolUsed, ok: !!(data && data.success) });
+    if (turns.length > MAX_TURNS) turns.shift();
+  } catch (e) {
+    hideTyping();
+    addAgentBubble(`<div class="err">네트워크 오류: ${escapeHtml(e.message)}.
+      백엔드 서버가 실행 중인지 확인하세요.</div>`);
+  } finally {
+    btn.disabled = false;
+    input.focus();
+  }
+}
+
+function approveAndRun() {
+  if (!pendingCmd) return;
+  document.getElementById('writeApproved').checked = true;
+  document.getElementById('cmdInput').value = pendingCmd;
+  sendCmd();
+}
+function cancelPending() {
+  pendingCmd = null;
+  addAgentBubble('<div>승인 요청이 취소되었습니다.</div>');
+}
+
+/* ---------- 인증키 저장 ---------- */
+function saveAuthKey() {
+  const k = document.getElementById('authKey').value.trim();
+  const a = document.getElementById('academyId').value || '1';
+  if (!k) { alert('인증키를 입력해 주세요.'); return; }
+  try {
+    localStorage.setItem(LS_KEY, k);
+    localStorage.setItem(LS_ACADEMY, a);
+  } catch (e) { /* private mode 등 */ }
+  addAgentBubble(`<div>🔑 인증키가 저장되었습니다 (학원ID ${escapeHtml(a)}).
+    이제 자연어 명령을 입력해 보세요.</div>`);
+}
+
+(function init() {
+  try {
+    const k = localStorage.getItem(LS_KEY);
+    const a = localStorage.getItem(LS_ACADEMY);
+    if (k) document.getElementById('authKey').value = k;
+    if (a) document.getElementById('academyId').value = a;
+  } catch (e) { /* 무시 */ }
+  renderToolsPanel();
+  addAgentBubble(`<div>안녕하세요, <b>AI 학원 비서</b>입니다. 👋</div>
+    <div style="font-size:13px;margin-top:6px;">
+      예: "오늘 결석한 학생을 정리해 줘", "학생 등록 김철수", "최근 7일 운영 보고서 만들어줘"<br>
+      위 <b>🧰 도구 목록</b>을 펼치면 7개 도구의 예시 명령을 볼 수 있습니다.</div>`);
+})();
+</script>
+</body>
+</html>

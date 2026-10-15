@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AcademyCraft - 학원 정보 - ADM-01</title>
+<style>
+  /* 최소 기능 UI. 디자인 차별화는 2차. 업무 로직과 분리. */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, sans-serif; background: #f5f5f5; padding: 16px; }
+  .header { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+  .header h1 { font-size: 20px; }
+  .nav { margin-bottom: 16px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn { padding: 12px 20px; background: #0066cc; color: #fff; border: none;
+         border-radius: 8px; cursor: pointer; font-size: 15px; }
+  .btn-sm { padding: 6px 12px; font-size: 13px; text-decoration: none; display: inline-block; }
+  .btn-ghost { background: #fff; color: #0066cc; border: 1px solid #0066cc; }
+  .msg { padding: 10px; border-radius: 8px; margin-bottom: 12px; display: none; }
+  .msg.ok { display: block; background: #e6f4ea; color: #1a7f37; }
+  .msg.err { display: block; background: #fce8e6; color: #c5221f; }
+  .panel { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+  .panel h2 { font-size: 16px; margin-bottom: 12px; }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 13px; color: #555; margin-bottom: 4px; }
+  .field input, .field textarea { width: 100%; padding: 10px; font-size: 15px;
+    border: 1px solid #ccc; border-radius: 8px; }
+  .field textarea { min-height: 70px; resize: vertical; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .branch-list { list-style: none; }
+  .branch-list li { padding: 10px 0; border-bottom: 1px solid #eee; font-size: 14px;
+    display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+  .badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 10px;
+    background: #e8f0fe; color: #1a73e8; margin-left: 6px; }
+  .hint { font-size: 12px; color: #888; }
+  .meta { font-size: 12px; color: #888; margin-top: 8px; }
+  @media (max-width: 600px) {
+    .row { grid-template-columns: 1fr; }
+    .btn { width: 100%; }
+  }
+  @media (max-width: 480px) {
+    button, .btn { min-height: 44px; }
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+    select, textarea { min-height: 44px; font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>학원 정보</h1>
+  <p style="color:#666;font-size:13px;margin-top:4px;">REA 8단계 구현 - ADM-01 · 학원 기본정보·지점 관리</p>
+</div>
+
+<div class="nav">
+  <a href="ADM-01-academy-info.html" class="btn btn-sm">학원 정보</a>
+  <a href="ADM-02-user-roles.html" class="btn btn-ghost btn-sm">사용자·권한</a>
+  <a href="ADM-03-audit-log.html" class="btn btn-ghost btn-sm">변경 이력</a>
+  <a href="OPS-02-dashboard.html" class="btn btn-ghost btn-sm">대시보드</a>
+</div>
+
+<div class="msg" id="msg"></div>
+
+<div class="panel">
+  <h2>기본 정보</h2>
+  <div class="field">
+    <label>학원 ID</label>
+    <input type="number" id="f-academy-id" value="1" min="1">
+    <p class="hint">조회·수정할 학원 ID (개발용 기본값 1)</p>
+  </div>
+  <div class="field">
+    <label>학원 이름 *</label>
+    <input type="text" id="f-name" placeholder="예: 미래학원">
+  </div>
+  <div class="row">
+    <div class="field">
+      <label>대표 전화번호</label>
+      <input type="text" id="f-phone" placeholder="예: 02-1234-5678">
+    </div>
+    <div class="field">
+      <label>로고 파일 키</label>
+      <input type="text" id="f-logo" placeholder="선택">
+    </div>
+  </div>
+  <div class="field">
+    <label>주소</label>
+    <input type="text" id="f-address" placeholder="예: 서울시 강남구 학원로 10">
+  </div>
+  <div class="field">
+    <label>메모</label>
+    <textarea id="f-memo" placeholder="선택"></textarea>
+  </div>
+  <button class="btn" onclick="saveInfo()">저장 (신규 등록·수정)</button>
+  <p class="meta" id="info-meta"></p>
+</div>
+
+<div class="panel">
+  <h2>지점 관리</h2>
+  <p class="hint" style="margin-bottom:8px;">본원 학원 ID 기준으로 지점을 등록합니다. 지점의 새 학원 ID는 자동 발급됩니다.</p>
+  <div class="row">
+    <div class="field">
+      <label>지점 이름 *</label>
+      <input type="text" id="b-name" placeholder="예: 2호점">
+    </div>
+    <div class="field">
+      <label>지점 전화번호</label>
+      <input type="text" id="b-phone" placeholder="선택">
+    </div>
+  </div>
+  <button class="btn" onclick="createBranch()">지점 등록</button>
+  <h2 style="margin-top:16px;">지점 목록</h2>
+  <ul class="branch-list" id="branch-list"><li class="hint">불러오는 중...</li></ul>
+</div>
+
+<script src="../components/api-client.js"></script>
+<script>
+function academyId() {
+  return document.getElementById('f-academy-id').value || '1';
+}
+
+function showMsg(text, ok) {
+  const el = document.getElementById('msg');
+  el.textContent = text;
+  el.className = 'msg ' + (ok ? 'ok' : 'err');
+}
+
+async function loadInfo() {
+  const id = academyId();
+  try {
+    const res = await apiGet(`/${id}/info`);
+    const data = await res.json();
+    if (!res.ok) {
+      document.getElementById('info-meta').textContent =
+        '미등록 학원입니다. 정보를 입력하고 저장하면 신규 등록됩니다.';
+      return;
+    }
+    document.getElementById('f-name').value = data.name || '';
+    document.getElementById('f-phone').value = data.phone || '';
+    document.getElementById('f-address').value = data.address || '';
+    document.getElementById('f-logo').value = data.logoKey || '';
+    document.getElementById('f-memo').value = data.memo || '';
+    const meta = [];
+    if (data.branch) meta.push('지점 (본원 ID: ' + data.parentAcademyId + ')');
+    else meta.push('본원/독립 학원');
+    if (data.updatedAt) meta.push('수정: ' + data.updatedAt.replace('T', ' ').substring(0, 16));
+    document.getElementById('info-meta').textContent = meta.join(' · ');
+  } catch (e) {
+    showMsg('서버 연결 실패', false);
+  }
+}
+
+async function loadBranches() {
+  const id = academyId();
+  const ul = document.getElementById('branch-list');
+  try {
+    const res = await apiGet(`/${id}/branches`);
+    const list = await res.json();
+    if (!res.ok) throw new Error('조회 실패');
+    if (!list.length) {
+      ul.innerHTML = '<li class="hint">등록된 지점이 없습니다.</li>';
+      return;
+    }
+    ul.innerHTML = list.map(b =>
+      `<li><span><strong>${escapeHtml(b.name)}</strong><span class="badge">ID ${b.id}</span></span>` +
+      `<span class="hint">${escapeHtml(b.phone || '')} ${escapeHtml(b.address || '')}</span></li>`
+    ).join('');
+  } catch (e) {
+    ul.innerHTML = '<li class="hint">지점 목록을 불러오지 못했습니다.</li>';
+  }
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+async function saveInfo() {
+  const id = academyId();
+  const body = {
+    name: document.getElementById('f-name').value || null,
+    phone: document.getElementById('f-phone').value || null,
+    address: document.getElementById('f-address').value || null,
+    logoKey: document.getElementById('f-logo').value || null,
+    memo: document.getElementById('f-memo').value || null
+  };
+  try {
+    const res = await apiPut(`/${id}/info`, body);
+    const data = await res.json();
+    if (!res.ok) {
+      showMsg(data.message || '저장 실패', false);
+      return;
+    }
+    showMsg('저장되었습니다.', true);
+    loadInfo();
+    loadBranches();
+  } catch (e) {
+    showMsg('서버 연결 실패', false);
+  }
+}
+
+async function createBranch() {
+  const id = academyId();
+  const name = document.getElementById('b-name').value.trim();
+  if (!name) {
+    showMsg('지점 이름을 입력하세요.', false);
+    return;
+  }
+  const body = {
+    name: name,
+    phone: document.getElementById('b-phone').value || null
+  };
+  try {
+    const res = await apiPost(`/${id}/branches`, body);
+    const data = await res.json();
+    if (!res.ok) {
+      showMsg(data.message || '지점 등록 실패', false);
+      return;
+    }
+    showMsg(`지점이 등록되었습니다. (새 학원 ID: ${data.id})`, true);
+    document.getElementById('b-name').value = '';
+    document.getElementById('b-phone').value = '';
+    loadBranches();
+  } catch (e) {
+    showMsg('서버 연결 실패', false);
+  }
+}
+
+document.getElementById('f-academy-id').addEventListener('change', () => {
+  loadInfo();
+  loadBranches();
+});
+loadInfo();
+loadBranches();
+</script>
+</body>
+</html>

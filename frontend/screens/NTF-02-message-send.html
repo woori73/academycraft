@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AcademyCraft - 메시지 발송 - NTF-02</title>
+<style>
+  /* 최소 기능 UI. 디자인 차별화는 2차. 업무 로직과 분리. */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, sans-serif; background: #f5f5f5; padding: 16px; }
+  .header { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+  .header h1 { font-size: 20px; }
+  .card { background: #fff; padding: 14px; border-radius: 8px; margin-bottom: 12px; }
+  .card h2 { font-size: 15px; margin-bottom: 10px; }
+  .targets { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .targets label { padding: 8px 14px; border: 1px solid #ddd; border-radius: 20px;
+                   cursor: pointer; font-size: 14px; }
+  .targets input { display: none; }
+  .targets input:checked + span { font-weight: bold; }
+  .targets label:has(input:checked) { background: #e8f0fe; border-color: #0066cc; }
+  .pick { max-height: 220px; overflow-y: auto; border: 1px solid #eee; border-radius: 8px; padding: 8px; }
+  .pick label { display: block; padding: 6px 4px; font-size: 14px; cursor: pointer; }
+  .pick label:hover { background: #f5f5f5; }
+  .field { margin-bottom: 10px; }
+  .field input, .field textarea { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; }
+  .field textarea { min-height: 120px; resize: vertical; }
+  .btn { padding: 12px 20px; background: #0066cc; color: #fff; border: none;
+         border-radius: 8px; cursor: pointer; font-size: 15px; }
+  .msg { padding: 10px; border-radius: 8px; margin-bottom: 12px; display: none; }
+  .msg.ok { display: block; background: #e6f4ea; color: #1a7f37; }
+  .msg.err { display: block; background: #fce8e6; color: #c5221f; }
+  .hint { color: #666; font-size: 12px; margin-top: 6px; }
+  @media (max-width: 480px) {
+    button, .btn { min-height: 44px; }
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+    select, textarea { min-height: 44px; font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>메시지 발송</h1>
+  <p style="color:#666;font-size:13px;margin-top:4px;">REA 3단계 구현 - NTF-02 · 원장·강사용 · 개별/반별/전체 발송</p>
+</div>
+
+<div class="msg" id="msg"></div>
+
+<div class="card">
+  <h2>발송 대상</h2>
+  <div class="targets">
+    <label><input type="radio" name="target" value="INDIVIDUAL" checked onchange="onTargetChange()"><span>개별 학부모</span></label>
+    <label><input type="radio" name="target" value="CLASS" onchange="onTargetChange()"><span>반 전체</span></label>
+    <label><input type="radio" name="target" value="ALL" onchange="onTargetChange()"><span>학원 전체</span></label>
+  </div>
+  <div class="pick" id="pick-box"></div>
+  <p class="hint" id="pick-hint"></p>
+</div>
+
+<div class="card">
+  <h2>메시지 내용</h2>
+  <div class="field"><input id="f-title" placeholder="제목 (필수)" maxlength="100"></div>
+  <div class="field"><textarea id="f-content" placeholder="내용 (필수)" maxlength="1000"></textarea></div>
+  <button class="btn" onclick="sendMessage()">발송하기</button>
+  <p class="hint">발송 채널: 앱 푸시(PUSH, 비용 0원). 수신 거부(OFF) 설정 학부모는 제외됩니다.</p>
+</div>
+
+<script src="../components/api-client.js"></script>
+<script>
+var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+
+onTargetChange();
+loadStudents();
+loadClasses();
+
+function targetType() {
+  return document.querySelector('input[name=target]:checked').value;
+}
+
+function onTargetChange() {
+  const box = document.getElementById('pick-box');
+  const hint = document.getElementById('pick-hint');
+  box.innerHTML = '';
+  if (targetType() === 'INDIVIDUAL') {
+    hint.textContent = '발송할 학부모(학생)를 선택하세요.';
+    loadStudents();
+  } else if (targetType() === 'CLASS') {
+    hint.textContent = '발송할 반을 선택하세요.';
+    loadClasses();
+  } else {
+    hint.textContent = '학원 전체 활성 학생의 학부모에게 발송됩니다.';
+    box.innerHTML = '<p style="color:#666;font-size:14px;padding:8px">대상 지정 불필요</p>';
+  }
+}
+
+async function loadStudents() {
+  if (targetType() !== 'INDIVIDUAL') return;
+  const res = await apiGet(`/1/students`);
+  const data = await res.json();
+  if (!res.ok) return;
+  const box = document.getElementById('pick-box');
+  box.innerHTML = '';
+  data.forEach(s => {
+    const l = document.createElement('label');
+    l.innerHTML = `<input type="checkbox" value="${s.id}"> ${escapeHtml(s.name)}` +
+      (s.grade ? ` <span style="color:#666">(${escapeHtml(s.grade)})</span>` : '');
+    box.appendChild(l);
+  });
+}
+
+async function loadClasses() {
+  if (targetType() !== 'CLASS') return;
+  const res = await apiGet(`/1/classes`);
+  const data = await res.json();
+  if (!res.ok) return;
+  const box = document.getElementById('pick-box');
+  box.innerHTML = '';
+  data.forEach(c => {
+    const l = document.createElement('label');
+    l.innerHTML = `<input type="checkbox" value="${c.id}"> ${escapeHtml(c.name)} (${c.studentCount}명)`;
+    box.appendChild(l);
+  });
+}
+
+function showMsg(text, ok) {
+  const m = document.getElementById('msg');
+  m.className = 'msg ' + (ok ? 'ok' : 'err');
+  m.textContent = text;
+  window.scrollTo(0, 0);
+}
+
+async function sendMessage() {
+  const type = targetType();
+  const title = document.getElementById('f-title').value.trim();
+  const content = document.getElementById('f-content').value.trim();
+  if (!title) { showMsg('제목을 입력하세요.', false); return; }
+  if (!content) { showMsg('내용을 입력하세요.', false); return; }
+
+  let targetIds = null;
+  if (type !== 'ALL') {
+    targetIds = [];
+    document.querySelectorAll('#pick-box input[type=checkbox]:checked').forEach(cb => {
+      targetIds.push(Number(cb.value));
+    });
+    if (targetIds.length === 0) { showMsg('발송 대상을 1명(1개 반) 이상 선택하세요.', false); return; }
+  }
+
+  if (!confirm(`발송하시겠습니까? (대상: ${type === 'ALL' ? '학원 전체' : targetIds.length + '건'})`)) return;
+
+  const res = await apiPost(`/1/notifications/send`, { targetType: type, targetIds, title, content });
+  const data = await res.json();
+  if (!res.ok) { showMsg(data.message || '발송 실패', false); return; }
+  showMsg(`발송 완료 — 요청 ${data.requestedCount}건, 성공 ${data.sentCount}건, ` +
+    `실패 ${data.failedCount}건, 수신거부 제외 ${data.skippedCount}건`, true);
+  document.getElementById('f-title').value = '';
+  document.getElementById('f-content').value = '';
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AcademyCraft - 문의 모음 - CNS-03</title>
+<style>
+  /* 최소 기능 UI. 디자인 차별화는 2차. 업무 로직과 분리. */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, sans-serif; background: #f5f5f5; padding: 16px; }
+  .header { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+  .header h1 { font-size: 20px; }
+  .login { background: #fff; padding: 14px; border-radius: 8px; margin-bottom: 16px;
+           display: flex; gap: 8px; flex-wrap: wrap; }
+  .login input { padding: 10px; border: 1px solid #ddd; border-radius: 8px; flex: 1; min-width: 160px; }
+  .login button, .btn { padding: 10px 16px; background: #0066cc; color: #fff; border: none;
+                        border-radius: 8px; cursor: pointer; }
+  .btn-sm { padding: 6px 12px; font-size: 13px; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+  .tab { padding: 8px 14px; border-radius: 16px; border: 1px solid #0066cc; background: #fff;
+         color: #0066cc; cursor: pointer; font-size: 13px; }
+  .tab.on { background: #0066cc; color: #fff; }
+  .wrap { display: flex; gap: 12px; align-items: flex-start; }
+  .list { flex: 1; min-width: 0; }
+  .detail { flex: 1.2; min-width: 0; background: #fff; padding: 14px; border-radius: 8px; }
+  .card { background: #fff; padding: 14px; border-radius: 8px; margin-bottom: 8px; cursor: pointer; }
+  .card.sel { outline: 2px solid #0066cc; }
+  .card .ttl { font-weight: bold; font-size: 15px; margin-bottom: 4px; }
+  .card .meta { color: #666; font-size: 12px; }
+  .tag { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px;
+         font-weight: bold; margin-right: 6px; }
+  .st-OPEN { background: #fef7e0; color: #b06000; }
+  .st-ANSWERED { background: #e6f4ea; color: #1a7f37; }
+  .st-CLOSED { background: #f1f3f4; color: #666; }
+  .bubble { padding: 10px 12px; border-radius: 12px; margin-bottom: 8px; max-width: 85%;
+            font-size: 14px; white-space: pre-wrap; }
+  .bubble .who { font-size: 11px; color: #888; margin-bottom: 4px; }
+  .bubble.parent { background: #e8f0fe; margin-right: auto; }
+  .bubble.staff { background: #e6f4ea; margin-left: auto; }
+  .bubble .unread { font-size: 11px; color: #c5221f; margin-top: 4px; }
+  .reply { display: flex; gap: 8px; margin-top: 12px; }
+  .reply textarea { flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 8px;
+                    min-height: 60px; resize: vertical; }
+  .msg { padding: 10px; border-radius: 8px; margin-bottom: 12px; display: none; }
+  .msg.ok { display: block; background: #e6f4ea; color: #1a7f37; }
+  .msg.err { display: block; background: #fce8e6; color: #c5221f; }
+  @media (max-width: 800px) {
+    .wrap { flex-direction: column; }
+    .login { flex-direction: column; }
+  }
+
+  /* [Phase5-Task4] 모바일 터치 영역 보강 (480px 이하) */
+  @media (max-width: 480px) {
+    button, .btn { min-height: 44px; }
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+    select, textarea { min-height: 44px; font-size: 16px; }
+    input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-width: 0; flex: none; accent-color: #0066cc; }
+  }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>문의 모음</h1>
+  <p style="color:#666;font-size:13px;margin-top:4px;">REA 5단계 구현 - CNS-03 · 학부모 문의 확인·답변 (원장·강사용)</p>
+</div>
+
+<div class="login">
+  <input id="memberid" placeholder="내 회원 ID (원장·강사)">
+  <button onclick="loadList()">조회</button>
+</div>
+
+<div class="tabs" id="tabs">
+  <button class="tab on" data-st="" onclick="setStatus('')">전체</button>
+  <button class="tab" data-st="OPEN" onclick="setStatus('OPEN')">미답변</button>
+  <button class="tab" data-st="ANSWERED" onclick="setStatus('ANSWERED')">답변완료</button>
+  <button class="tab" data-st="CLOSED" onclick="setStatus('CLOSED')">종료</button>
+</div>
+
+<div class="msg" id="msg"></div>
+
+<div class="wrap">
+  <div class="list" id="list"></div>
+  <div class="detail" id="detail" style="display:none">
+    <h3 id="d-title" style="margin-bottom:6px"></h3>
+    <div id="d-meta" style="color:#666;font-size:12px;margin-bottom:12px"></div>
+    <div id="d-msgs"></div>
+    <div class="reply">
+      <textarea id="reply-text" placeholder="답변 입력"></textarea>
+      <button class="btn btn-sm" onclick="sendReply()">답변 전송</button>
+    </div>
+  </div>
+</div>
+
+<script src="../components/api-client.js"></script>
+<script>
+var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+let statusFilter = '';
+let selectedId = null;
+
+function showMsg(text, ok) {
+  const m = document.getElementById('msg');
+  m.className = 'msg ' + (ok ? 'ok' : 'err');
+  m.textContent = text;
+}
+
+function memberId() {
+  const v = document.getElementById('memberid').value.trim();
+  if (!v) { showMsg('내 회원 ID를 입력하세요.', false); return null; }
+  return v;
+}
+
+function setStatus(s) {
+  statusFilter = s;
+  document.querySelectorAll('#tabs .tab').forEach(b =>
+    b.classList.toggle('on', b.dataset.st === s));
+  loadList();
+}
+
+async function loadList() {
+  if (!memberId()) return;
+  let url = `/1/consultations?type=INQUIRY`;
+  if (statusFilter) url += `&status=${statusFilter}`;
+  const res = await apiGet(url);
+  const data = await res.json();
+  if (!res.ok) { showMsg(data.message || '조회 실패', false); return; }
+  const box = document.getElementById('list');
+  box.innerHTML = '';
+  if (data.length === 0) {
+    box.innerHTML = '<div class="card"><div class="meta">문의가 없습니다.</div></div>';
+    return;
+  }
+  data.forEach(c => {
+    const d = document.createElement('div');
+    d.className = 'card' + (c.id === selectedId ? ' sel' : '');
+    d.onclick = () => selectThread(c.id);
+    d.innerHTML =
+      `<div class="ttl">${escapeHtml(c.title)}</div>` +
+      `<div class="meta"><span class="tag st-${c.status}">${escapeHtml(c.statusLabel)}</span>` +
+      `${escapeHtml(c.studentName)} · ${c.messageCount}개 메시지 · ${formatDt(c.lastMessageAt || c.createdAt)}</div>`;
+    box.appendChild(d);
+  });
+}
+
+async function selectThread(id) {
+  selectedId = id;
+  const res = await apiGet(`/1/consultations/${id}`);
+  const c = await res.json();
+  if (!res.ok) { showMsg(c.message || '상세 조회 실패', false); return; }
+  document.getElementById('detail').style.display = 'block';
+  document.getElementById('d-title').textContent = c.title;
+  document.getElementById('d-meta').textContent =
+    `${c.studentName} 학부모 · ${c.statusLabel} · ${formatDt(c.createdAt)}`;
+  const box = document.getElementById('d-msgs');
+  box.innerHTML = '';
+  c.messages.forEach(m => {
+    const b = document.createElement('div');
+    b.className = 'bubble ' + (m.senderKind === 'PARENT' ? 'parent' : 'staff');
+    b.innerHTML = `<div class="who">${escapeHtml(m.senderName)} · ${formatDt(m.createdAt)}</div>` +
+      escapeHtml(m.content) +
+      (m.read ? '' : '<div class="unread">안읽음</div>');
+    box.appendChild(b);
+  });
+  document.querySelectorAll('#list .card').forEach(el => el.classList.remove('sel'));
+  await loadList(); // 선택 표시 갱신
+}
+
+async function sendReply() {
+  const mid = memberId();
+  if (!mid || !selectedId) { showMsg('스레드를 먼저 선택하세요.', false); return; }
+  const content = document.getElementById('reply-text').value.trim();
+  if (!content) { showMsg('답변 내용을 입력하세요.', false); return; }
+  const res = await apiPost(`/1/consultations/${selectedId}/messages`, { memberId: Number(mid), content });
+  const data = await res.json();
+  if (!res.ok) { showMsg(data.message || '답변 전송 실패', false); return; }
+  const note = data.notificationSentCount > 0 ? ' (학부모 알림 발송됨)'
+    : data.notificationSkippedCount > 0 ? ' (학부모 알림 OFF로 생략)'
+    : data.notificationError ? ' (알림 발송 오류: ' + data.notificationError + ')' : '';
+  showMsg('답변이 전송되었습니다.' + note, true);
+  document.getElementById('reply-text').value = '';
+  await selectThread(selectedId);
+  await loadList();
+}
+
+function formatDt(s) {
+  if (!s) return '';
+  return s.replace('T', ' ').slice(0, 16);
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+</script>
+</body>
+</html>

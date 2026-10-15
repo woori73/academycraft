@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AcademyCraft - 통계 대시보드 - OPS-02</title>
+<style>
+  /* 최소 기능 UI. 디자인 차별화는 2차. 업무 로직과 분리. */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, sans-serif; background: #f5f5f5; padding: 16px; }
+  .header { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+  .header h1 { font-size: 20px; }
+  .nav { margin-bottom: 16px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn { padding: 12px 20px; background: #0066cc; color: #fff; border: none;
+         border-radius: 8px; cursor: pointer; font-size: 15px; }
+  .btn-sm { padding: 6px 12px; font-size: 13px; text-decoration: none; display: inline-block; }
+  .btn-ghost { background: #fff; color: #0066cc; border: 1px solid #0066cc; }
+  .msg { padding: 10px; border-radius: 8px; margin-bottom: 12px; display: none; }
+  .msg.ok { display: block; background: #e6f4ea; color: #1a7f37; }
+  .msg.err { display: block; background: #fce8e6; color: #c5221f; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+          gap: 12px; margin-bottom: 16px; }
+  .card { background: #fff; padding: 16px; border-radius: 8px; }
+  .card .label { font-size: 13px; color: #666; margin-bottom: 8px; }
+  .card .value { font-size: 28px; font-weight: bold; }
+  .card .unit { font-size: 13px; color: #888; font-weight: normal; }
+  .card .sub { font-size: 12px; color: #888; margin-top: 6px; }
+  .panel { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+  .panel h2 { font-size: 16px; margin-bottom: 12px; }
+  .att-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .att-box { flex: 1; min-width: 90px; text-align: center; padding: 12px 8px;
+             background: #f8f9fa; border-radius: 8px; }
+  .att-box .n { font-size: 22px; font-weight: bold; }
+  .att-box .t { font-size: 12px; color: #666; margin-top: 4px; }
+  .meta { font-size: 12px; color: #888; text-align: right; margin-top: 8px; }
+  .hint { font-size: 12px; color: #888; }
+
+  /* [Phase5-Task4] 모바일 터치 영역 보강 (480px 이하) */
+  @media (max-width: 480px) {
+    button, .btn { min-height: 44px; }
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+    select, textarea { min-height: 44px; font-size: 16px; }
+    input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-width: 0; flex: none; accent-color: #0066cc; }
+  }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>통계 대시보드</h1>
+  <p style="color:#666;font-size:13px;margin-top:4px;">AcademyCraft · 학원 운영 현황 한눈에 보기</p>
+</div>
+
+<div class="nav">
+  <a href="MBR-01-student-list.html" class="btn btn-ghost btn-sm">학생 관리</a>
+  <a href="CLS-01-class-list.html" class="btn btn-ghost btn-sm">반 관리</a>
+  <a href="ATT-01-attendance-keypad.html" class="btn btn-ghost btn-sm">출결</a>
+  <a href="HW-03-homework-list.html" class="btn btn-ghost btn-sm">숙제·성적</a>
+  <a href="NTC-01-notice-list.html" class="btn btn-ghost btn-sm">공지</a>
+  <a href="CNS-01-consultation-list.html" class="btn btn-ghost btn-sm">상담</a>
+  <a href="CHAT-01-ai-chat.html" class="btn btn-ghost btn-sm">AI 학원 비서</a>
+  <a href="PAY-01-payment-coming-soon.html" class="btn btn-ghost btn-sm">수납·결제 (준비 중)</a>
+</div>
+
+<div class="nav">
+  <a href="OPS-01-schedule-calendar.html" class="btn btn-ghost btn-sm">일정·캘린더</a>
+  <a href="OPS-02-dashboard.html" class="btn btn-sm">통계 대시보드</a>
+  <a href="OPS-03-excel-io.html" class="btn btn-ghost btn-sm">엑셀 가져오기·내보내기</a>
+  <button class="btn btn-ghost btn-sm" onclick="loadStats()">새로고침</button>
+</div>
+
+<div class="msg" id="msg"></div>
+
+<div class="grid" id="cards">
+  <div class="card"><div class="label">학생 수</div><div class="value" id="v-students">-</div></div>
+  <div class="card"><div class="label">반 수</div><div class="value" id="v-classes">-</div></div>
+  <div class="card"><div class="label">미답변 문의</div><div class="value" id="v-unanswered">-</div></div>
+  <div class="card"><div class="label">이번 달 공지</div><div class="value"><span id="v-notices">-</span> <span class="unit">건</span></div></div>
+</div>
+
+<div class="panel">
+  <h2>오늘 출결 현황 <span class="hint" id="att-date"></span></h2>
+  <div class="att-row" id="att-row">
+    <div class="att-box"><div class="n" id="a-in">-</div><div class="t">등원</div></div>
+    <div class="att-box"><div class="n" id="a-out">-</div><div class="t">하원</div></div>
+    <div class="att-box"><div class="n" id="a-absent">-</div><div class="t">결석</div></div>
+    <div class="att-box"><div class="n" id="a-late">-</div><div class="t">지각</div></div>
+    <div class="att-box"><div class="n" id="a-early">-</div><div class="t">조퇴</div></div>
+    <div class="att-box"><div class="n" id="a-students">-</div><div class="t">기록 학생 수</div></div>
+  </div>
+  <p class="meta" id="gen-at"></p>
+</div>
+
+<div class="panel">
+  <h2>바로 가기</h2>
+  <div class="nav" style="margin-bottom:0;">
+    <a href="OPS-01-schedule-calendar.html" class="btn btn-ghost btn-sm">이번 달 일정 보기</a>
+    <a href="ATT-02-attendance-monthly.html" class="btn btn-ghost btn-sm">월별 출결 현황</a>
+    <a href="CNS-03-inquiry-inbox.html" class="btn btn-ghost btn-sm">문의 모음</a>
+    <a href="OPS-03-excel-io.html" class="btn btn-ghost btn-sm">엑셀 가져오기·내보내기</a>
+  </div>
+</div>
+
+<script src="../components/api-client.js"></script>
+<script>
+var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+
+function showMsg(text, ok) {
+  const el = document.getElementById('msg');
+  el.textContent = text;
+  el.className = 'msg ' + (ok ? 'ok' : 'err');
+}
+
+async function loadStats() {
+  try {
+    const res = await apiGet(`/1/dashboard/stats`);
+    if (!res.ok) throw new Error('조회 실패');
+    const s = await res.json();
+
+    document.getElementById('v-students').innerHTML =
+      `${s.studentCount} <span class="unit">명</span>`;
+    document.getElementById('v-classes').innerHTML =
+      `${s.classCount} <span class="unit">개</span>`;
+    document.getElementById('v-unanswered').innerHTML =
+      `${s.unansweredConsultationCount} <span class="unit">건</span>`;
+    document.getElementById('v-notices').textContent = s.monthlyNoticeCount;
+
+    const t = s.todayAttendance || {};
+    document.getElementById('att-date').textContent = `(${t.date || ''})`;
+    document.getElementById('a-in').textContent = t.checkInCount != null ? t.checkInCount : '-';
+    document.getElementById('a-out').textContent = t.checkOutCount != null ? t.checkOutCount : '-';
+    document.getElementById('a-absent').textContent = t.absentCount != null ? t.absentCount : '-';
+    document.getElementById('a-late').textContent = t.lateCount != null ? t.lateCount : '-';
+    document.getElementById('a-early').textContent = t.earlyLeaveCount != null ? t.earlyLeaveCount : '-';
+    document.getElementById('a-students').textContent = t.studentCount != null ? t.studentCount : '-';
+
+    if (s.generatedAt) {
+      document.getElementById('gen-at').textContent =
+        `집계 시각: ${s.generatedAt.replace('T', ' ').substring(0, 16)}`;
+    }
+    showMsg('', true);
+  } catch (e) {
+    showMsg('대시보드 조회 실패: ' + e.message, false);
+  }
+}
+
+loadStats();
+</script>
+</body>
+</html>

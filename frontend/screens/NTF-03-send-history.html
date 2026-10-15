@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AcademyCraft - 발송 이력 - NTF-03</title>
+<style>
+  /* 최소 기능 UI. 디자인 차별화는 2차. 업무 로직과 분리. */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, sans-serif; background: #f5f5f5; padding: 16px; }
+  .header { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+  .header h1 { font-size: 20px; }
+  .controls { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .controls select { padding: 10px; border: 1px solid #ddd; border-radius: 8px; }
+  .controls button { padding: 10px 16px; background: #0066cc; color: #fff; border: none;
+                     border-radius: 8px; cursor: pointer; }
+  .card { background: #fff; padding: 14px; border-radius: 8px; margin-bottom: 8px; }
+  .card .ttl { font-weight: bold; font-size: 15px; margin-bottom: 4px; }
+  .card .meta { color: #666; font-size: 12px; margin-bottom: 6px; }
+  .card .body { font-size: 14px; color: #333; white-space: pre-wrap; }
+  .card .fail { font-size: 13px; color: #c5221f; margin-top: 6px; }
+  .st { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px;
+        font-weight: bold; margin-right: 6px; }
+  .st-SENT { background: #e6f4ea; color: #1a7f37; }
+  .st-FAILED { background: #fce8e6; color: #c5221f; }
+  .tag { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px;
+         background: #f1f3f4; color: #5f6368; margin-right: 6px; }
+  .btn { padding: 6px 12px; border: 1px solid #ddd; border-radius: 6px; background: #fff;
+         cursor: pointer; font-size: 13px; margin-top: 8px; }
+  .btn:hover { background: #f5f5f5; }
+  .msg { padding: 10px; border-radius: 8px; margin-bottom: 12px; display: none; }
+  .msg.ok { display: block; background: #e6f4ea; color: #1a7f37; }
+  .msg.err { display: block; background: #fce8e6; color: #c5221f; }
+  #summary { margin-bottom: 8px; color: #555; font-size: 14px; }
+  @media (max-width: 480px) {
+    button, .btn { min-height: 44px; }
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+    select, textarea { min-height: 44px; font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>발송 이력</h1>
+  <p style="color:#666;font-size:13px;margin-top:4px;">REA 3단계 구현 - NTF-03 · 관리자용 · 성공/실패 · 재시도</p>
+</div>
+
+<div class="controls">
+  <select id="f-status">
+    <option value="">전체 상태</option>
+    <option value="SENT">성공</option>
+    <option value="FAILED">실패</option>
+  </select>
+  <select id="f-type">
+    <option value="">전체 종류</option>
+    <option value="CHECK_IN">등원 알림</option>
+    <option value="CHECK_OUT">하원 알림</option>
+    <option value="NOTICE">공지 알림</option>
+    <option value="CONSULT_REPLY">상담 답변 알림</option>
+    <option value="GRADE">성적 알림</option>
+    <option value="HOMEWORK">숙제 알림</option>
+  </select>
+  <button onclick="loadHistory()">조회</button>
+</div>
+
+<div class="msg" id="msg"></div>
+<div id="summary"></div>
+<div id="list"></div>
+
+<script src="../components/api-client.js"></script>
+<script>
+var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+let cache = [];
+
+loadHistory();
+
+function showMsg(text, ok) {
+  const m = document.getElementById('msg');
+  m.className = 'msg ' + (ok ? 'ok' : 'err');
+  m.textContent = text;
+}
+
+async function loadHistory() {
+  const res = await apiGet(`/1/notifications/history`);
+  const data = await res.json();
+  if (!res.ok) { showMsg(data.message || '조회 실패', false); return; }
+  cache = data;
+  render();
+}
+
+function render() {
+  const stFilter = document.getElementById('f-status').value;
+  const typeFilter = document.getElementById('f-type').value;
+  const rows = cache.filter(h =>
+    (!stFilter || h.status === stFilter) && (!typeFilter || h.type === typeFilter));
+
+  const sent = rows.filter(h => h.status === 'SENT').length;
+  const failed = rows.filter(h => h.status === 'FAILED').length;
+  document.getElementById('summary').textContent =
+    `총 ${rows.length}건 (성공 ${sent}건 · 실패 ${failed}건)`;
+
+  const list = document.getElementById('list');
+  list.innerHTML = '';
+  if (rows.length === 0) {
+    list.innerHTML = '<div class="card"><div class="body">발송 이력이 없습니다.</div></div>';
+    return;
+  }
+  rows.forEach(h => {
+    const d = document.createElement('div');
+    d.className = 'card';
+    d.innerHTML =
+      `<div class="ttl">${escapeHtml(h.title)}</div>` +
+      `<div class="meta"><span class="st st-${h.status}">${h.status === 'SENT' ? '성공' : '실패'}</span>` +
+      `<span class="tag">${escapeHtml(h.typeLabel)}</span>` +
+      `<span class="tag">${h.channel}</span>` +
+      `수신: ${escapeHtml(h.recipientName)}${h.recipientPhone ? ' (' + escapeHtml(h.recipientPhone) + ')' : ''} · ` +
+      `${formatDt(h.createdAt)}${h.retryCount > 0 ? ' · 재시도 ' + h.retryCount + '회' : ''}` +
+      ` · ${h.read ? '읽음' : '안읽음'}</div>` +
+      `<div class="body">${escapeHtml(h.content)}</div>` +
+      (h.status === 'FAILED'
+        ? `<div class="fail">실패 사유: ${escapeHtml(h.failReason || '알 수 없음')}</div>` +
+          `<button class="btn" onclick="retry(${h.id})">재시도</button>`
+        : '');
+    list.appendChild(d);
+  });
+}
+
+async function retry(id) {
+  if (!confirm('이 알림을 재시도하시겠습니까?')) return;
+  const res = await apiPost(`/1/notifications/${id}/retry`);
+  const data = await res.json();
+  if (!res.ok) { showMsg(data.message || '재시도 실패', false); return; }
+  showMsg(`재시도 완료 — 상태: ${data.status}, 재시도 횟수: ${data.retryCount}`, data.status === 'SENT');
+  await loadHistory();
+}
+
+function formatDt(s) {
+  if (!s) return '';
+  return s.replace('T', ' ').slice(0, 16);
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+</script>
+</body>
+</html>

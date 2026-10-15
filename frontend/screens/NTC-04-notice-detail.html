@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AcademyCraft - 공지 상세 - NTC-04</title>
+<style>
+  /* 최소 기능 UI. 디자인 차별화는 2차. 업무 로직과 분리. */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, sans-serif; background: #f5f5f5; padding: 16px; }
+  .header { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+  .header h1 { font-size: 20px; }
+  .card { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+  .card .ttl { font-size: 18px; font-weight: bold; margin-bottom: 8px; }
+  .card .meta { color: #666; font-size: 12px; margin-bottom: 12px; }
+  .card .body { font-size: 14px; color: #333; white-space: pre-wrap; line-height: 1.6; }
+  .tag { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px;
+         font-weight: bold; margin-right: 6px; }
+  .tag-ALL { background: #fef7e0; color: #b06000; }
+  .tag-CLASS { background: #e8f0fe; color: #1a56db; }
+  .views { color: #999; font-size: 12px; }
+  .btn { padding: 10px 16px; background: #0066cc; color: #fff; border: none;
+         border-radius: 8px; cursor: pointer; }
+  .btn-sm { padding: 6px 12px; font-size: 13px; }
+  .btn-ghost { background: #fff; color: #0066cc; border: 1px solid #0066cc; }
+  .btn-danger { background: #fff; color: #c5221f; border: 1px solid #c5221f; }
+  .msg { padding: 10px; border-radius: 8px; margin-bottom: 12px; display: none; }
+  .msg.ok { display: block; background: #e6f4ea; color: #1a7f37; }
+  .msg.err { display: block; background: #fce8e6; color: #c5221f; }
+  .sec { background: #fff; padding: 14px; border-radius: 8px; margin-bottom: 16px; }
+  .sec h2 { font-size: 16px; margin-bottom: 10px; }
+  .row { display: flex; justify-content: space-between; padding: 8px 0;
+         border-bottom: 1px solid #eee; font-size: 14px; }
+  .row:last-child { border-bottom: none; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+  .attach { margin-top: 12px; padding: 10px; background: #f8f9fa; border-radius: 8px; font-size: 13px; }
+  @media (max-width: 600px) {
+    .actions { flex-direction: column; align-items: stretch; }
+  }
+
+  /* [Phase5-Task4] 모바일 터치 영역 보강 (480px 이하) */
+  @media (max-width: 480px) {
+    button, .btn { min-height: 44px; }
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+    select, textarea { min-height: 44px; font-size: 16px; }
+    input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-width: 0; flex: none; accent-color: #0066cc; }
+  }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>공지 상세</h1>
+  <p style="color:#666;font-size:13px;margin-top:4px;">REA 4단계 구현 - NTC-04 · 조회수(관리자만) · 읽음 확인</p>
+</div>
+
+<div class="actions">
+  <button class="btn btn-ghost btn-sm" onclick="history.back()">← 목록으로</button>
+  <button class="btn btn-danger btn-sm" id="btn-delete" style="display:none" onclick="deleteNotice()">삭제</button>
+</div>
+
+<div class="msg" id="msg"></div>
+<div class="card" id="detail"></div>
+
+<div class="card" id="read-card" style="display:none">
+  <div style="font-size:14px;font-weight:bold;margin-bottom:8px;">읽음 확인</div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;">
+    <input id="authkey" placeholder="학생 인증키" style="padding:10px;border:1px solid #ddd;border-radius:8px;flex:1;min-width:160px;">
+    <button class="btn btn-sm" onclick="markRead()">읽음 확인</button>
+  </div>
+  <div id="read-state" style="font-size:13px;color:#666;margin-top:8px;"></div>
+</div>
+
+<div class="sec" id="readers-sec" style="display:none">
+  <h2>확인자 목록 (관리자)</h2>
+  <div id="readers"></div>
+</div>
+
+<script src="../components/api-client.js"></script>
+<script>
+var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+const params = new URLSearchParams(location.search);
+const noticeId = params.get('id');
+const urlAuthKey = params.get('authKey') || '';
+let notice = null;
+
+function showMsg(text, ok) {
+  const m = document.getElementById('msg');
+  m.className = 'msg ' + (ok ? 'ok' : 'err');
+  m.textContent = text;
+}
+
+function fmtDate(s) {
+  if (!s) return '';
+  return s.replace('T', ' ').substring(0, 16);
+}
+
+function esc(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function isAdmin() {
+  return !urlAuthKey && !document.getElementById('authkey').value.trim();
+}
+
+async function loadDetail() {
+  if (!noticeId) { showMsg('공지 ID가 없습니다.', false); return; }
+  const ak = urlAuthKey || document.getElementById('authkey').value.trim();
+  // 학생 인증키는 URL 파라미터에 포함하지 않고 X-Auth-Key 헤더로만 전송
+  try {
+    const res = await apiGet(`/1/notices/${noticeId}`, ak || undefined);
+    const data = await res.json();
+    if (!res.ok) { showMsg(data.message || '조회 실패', false); return; }
+    notice = data;
+    const tag = data.scope === 'ALL'
+      ? '<span class="tag tag-ALL">전체공지</span>'
+      : `<span class="tag tag-CLASS">반소식${data.className ? ' · ' + esc(data.className) : ''}</span>`;
+    const views = (data.viewCount != null)
+      ? ` <span class="views">조회수 ${data.viewCount}</span>` : '';
+    const attach = data.attachmentFileName
+      ? `<div class="attach">첨부: ${esc(data.attachmentFileName)}${data.attachmentFileKey ? ' (' + esc(data.attachmentFileKey) + ')' : ''}</div>`
+      : '';
+    document.getElementById('detail').innerHTML = `
+      <div class="ttl">${tag}${esc(data.title)}</div>
+      <div class="meta">${esc(data.authorName || '학원')}${views} · 확인 ${data.readCount}명 · ${fmtDate(data.createdAt)}</div>
+      <div class="body">${esc(data.content)}</div>${attach}`;
+    document.getElementById('btn-delete').style.display = isAdmin() ? '' : 'none';
+    document.getElementById('read-card').style.display = '';
+    if (ak) document.getElementById('authkey').value = ak;
+    updateReadState();
+    if (isAdmin()) loadReaders();
+  } catch (e) {
+    showMsg('서버 연결 실패: ' + e.message, false);
+  }
+}
+
+function updateReadState() {
+  if (notice && notice.myRead) {
+    document.getElementById('read-state').textContent = '읽음 확인됨';
+  } else {
+    document.getElementById('read-state').textContent = '';
+  }
+}
+
+async function markRead() {
+  const authKey = document.getElementById('authkey').value.trim();
+  if (!authKey) { showMsg('학생 인증키를 입력하세요.', false); return; }
+  try {
+    // body 의 authKey 는 백엔드 ReadRequest 식별용으로 유지 (헤더에도 동일 키 전송)
+    const res = await apiPost(`/1/notices/${noticeId}/read`, { authKey: authKey }, authKey);
+    const data = await res.json();
+    if (!res.ok) { showMsg(data.message || '읽음 확인 실패', false); return; }
+    showMsg(data.alreadyRead ? '이미 확인된 공지입니다.' : '읽음 확인되었습니다.', true);
+    loadDetail();
+  } catch (e) {
+    showMsg('서버 연결 실패: ' + e.message, false);
+  }
+}
+
+async function loadReaders() {
+  try {
+    const res = await apiGet(`/1/notices/${noticeId}/readers`);
+    const data = await res.json();
+    if (!res.ok) return;
+    document.getElementById('readers-sec').style.display = '';
+    document.getElementById('readers').innerHTML = data.length === 0
+      ? '<div class="row">아직 읽음 확인한 사람이 없습니다.</div>'
+      : data.map(r => `<div class="row"><span>${esc(r.studentName)}</span><span style="color:#888">${fmtDate(r.readAt)}</span></div>`).join('');
+  } catch (e) { /* 무시 */ }
+}
+
+async function deleteNotice() {
+  if (!confirm('이 공지를 삭제하시겠습니까?')) return;
+  try {
+    const res = await apiDelete(`/1/notices/${noticeId}`);
+    if (!res.ok) {
+      const data = await res.json();
+      showMsg(data.message || '삭제 실패', false);
+      return;
+    }
+    showMsg('삭제되었습니다.', true);
+    setTimeout(() => history.back(), 800);
+  } catch (e) {
+    showMsg('서버 연결 실패: ' + e.message, false);
+  }
+}
+
+if (urlAuthKey) document.getElementById('authkey').value = urlAuthKey;
+loadDetail();
+</script>
+</body>
+</html>

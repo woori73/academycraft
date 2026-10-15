@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AcademyCraft - 숙제 안내 - HW-03</title>
+<style>
+  /* 최소 기능 UI. 디자인 차별화는 2차. 업무 로직과 분리. */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, sans-serif; background: #f5f5f5; padding: 16px; }
+  .header { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+  .header h1 { font-size: 20px; }
+  .card { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 12px; }
+  .field label { display: block; font-size: 13px; color: #555; margin-bottom: 6px; font-weight: bold; }
+  .field select { width: 100%; padding: 10px; border: 1px solid #ddd;
+                  border-radius: 8px; font-size: 14px; }
+  .hw { border-bottom: 1px solid #eee; padding: 12px 0; }
+  .hw:last-child { border-bottom: none; }
+  .hw-title { font-size: 15px; font-weight: bold; display: flex; gap: 8px; align-items: center; }
+  .hw-meta { font-size: 12px; color: #888; margin-top: 4px; }
+  .hw-content { font-size: 14px; margin-top: 8px; white-space: pre-wrap; }
+  .badge { font-size: 12px; padding: 3px 10px; border-radius: 12px; white-space: nowrap; }
+  .badge.done { background: #e6f4ea; color: #1a7f37; }
+  .badge.undone { background: #fce8e6; color: #c5221f; }
+  .badge.none { background: #eee; color: #666; }
+  .btn-sm { padding: 6px 12px; font-size: 13px; }
+  .btn-ghost { background: #fff; color: #0066cc; border: 1px solid #0066cc;
+               border-radius: 8px; cursor: pointer; text-decoration: none; }
+  .btn { background: #0066cc; color: #fff; border: none; border-radius: 8px;
+         cursor: pointer; text-decoration: none; }
+  .nav { margin-bottom: 16px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .msg { padding: 10px; border-radius: 8px; margin-bottom: 12px; display: none; }
+  .msg.err { display: block; background: #fce8e6; color: #c5221f; }
+  .empty { color: #888; font-size: 14px; text-align: center; padding: 24px; }
+
+  /* [Phase5-Task4] 모바일 터치 영역 보강 (480px 이하) */
+  @media (max-width: 480px) {
+    button, .btn { min-height: 44px; }
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+    select, textarea { min-height: 44px; font-size: 16px; }
+    input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-width: 0; flex: none; accent-color: #0066cc; }
+  }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>숙제 안내</h1>
+  <p style="color:#666;font-size:13px;margin-top:4px;">REA 6단계 구현 - HW-03 · 학부모 · 자녀 숙제 목록·검사 상태</p>
+</div>
+
+<div class="nav">
+  <a href="HW-01-homework-form.html" class="btn btn-ghost btn-sm">숙제 등록</a>
+  <a href="HW-02-homework-check.html" class="btn btn-ghost btn-sm">숙제 검사</a>
+  <a href="HW-03-homework-list.html" class="btn btn-sm">숙제 안내</a>
+  <a href="RPT-01-learning-report.html" class="btn btn-ghost btn-sm">학습 리포트</a>
+</div>
+
+<div class="msg" id="msg"></div>
+
+<div class="card">
+  <div class="field">
+    <label>자녀 선택 (학부모 화면 — 개발용으로 학생 목록 사용)</label>
+    <select id="f-student" onchange="loadHomework()"><option value="">자녀 선택</option></select>
+  </div>
+</div>
+
+<div class="card" id="list"><div class="empty">자녀를 선택하세요.</div></div>
+
+<script src="../components/api-client.js"></script>
+<script>
+var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+
+function showMsg(text) {
+  const m = document.getElementById('msg');
+  m.className = 'msg err';
+  m.textContent = text;
+}
+
+async function loadStudents() {
+  try {
+    const res = await apiGet(`/1/students`);
+    const data = await res.json();
+    if (!res.ok) return;
+    const sel = document.getElementById('f-student');
+    data.forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s.id;
+      opt.textContent = s.name;
+      sel.appendChild(opt);
+    });
+  } catch (e) { /* 무시 */ }
+}
+
+async function loadHomework() {
+  const studentId = document.getElementById('f-student').value;
+  const list = document.getElementById('list');
+  if (!studentId) { list.innerHTML = '<div class="empty">자녀를 선택하세요.</div>'; return; }
+  try {
+    const res = await apiGet(`/1/homework?studentId=${studentId}`);
+    const data = await res.json();
+    if (!res.ok) { showMsg(data.message || '조회 실패'); return; }
+    if (data.length === 0) {
+      list.innerHTML = '<div class="empty">안내된 숙제가 없습니다.</div>';
+      return;
+    }
+    list.innerHTML = '';
+    data.forEach(h => {
+      const div = document.createElement('div');
+      div.className = 'hw';
+      let badge;
+      if (h.checkStatus === 'COMPLETED') {
+        const score = (h.checkScore !== null && h.checkScore !== undefined) ? ` (${h.checkScore}점)` : '';
+        badge = `<span class="badge done">완료${score}</span>`;
+      } else if (h.checkStatus === 'INCOMPLETE') {
+        badge = '<span class="badge undone">미완료</span>';
+      } else {
+        badge = '<span class="badge none">미검사</span>';
+      }
+      const target = h.className ? `[${escapeHtml(h.className)}]` : '개별';
+      const comment = h.checkComment ? `<div class="hw-meta">선생님 코멘트: ${escapeHtml(h.checkComment)}</div>` : '';
+      div.innerHTML =
+        `<div class="hw-title">${escapeHtml(h.title)} ${badge}</div>` +
+        `<div class="hw-meta">${target} · 마감 ${h.dueDate}</div>` +
+        `<div class="hw-content">${escapeHtml(h.content)}</div>${comment}`;
+      list.appendChild(div);
+    });
+  } catch (e) {
+    showMsg('서버 연결 실패');
+  }
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+loadStudents();
+</script>
+</body>
+</html>

@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AcademyCraft - 문의 작성 - CNS-02</title>
+<style>
+  /* 최소 기능 UI. 디자인 차별화는 2차. 업무 로직과 분리. */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, sans-serif; background: #f5f5f5; padding: 16px; }
+  .header { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+  .header h1 { font-size: 20px; }
+  .form { background: #fff; padding: 16px; border-radius: 8px; }
+  .form label { display: block; font-size: 13px; color: #666; margin: 12px 0 6px; }
+  .form label:first-child { margin-top: 0; }
+  .form input, .form textarea { width: 100%; padding: 10px; border: 1px solid #ddd;
+                                border-radius: 8px; font-size: 14px; }
+  .form textarea { min-height: 160px; resize: vertical; }
+  .btn { padding: 12px 16px; background: #0066cc; color: #fff; border: none;
+         border-radius: 8px; cursor: pointer; width: 100%; margin-top: 16px; font-size: 15px; }
+  .msg { padding: 10px; border-radius: 8px; margin-bottom: 12px; display: none; }
+  .msg.ok { display: block; background: #e6f4ea; color: #1a7f37; }
+  .msg.err { display: block; background: #fce8e6; color: #c5221f; }
+
+  /* [Phase5-Task4] 모바일 터치 영역 보강 (480px 이하) */
+  @media (max-width: 480px) {
+    button, .btn { min-height: 44px; }
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+    select, textarea { min-height: 44px; font-size: 16px; }
+    input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-width: 0; flex: none; accent-color: #0066cc; }
+  }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>문의 작성</h1>
+  <p style="color:#666;font-size:13px;margin-top:4px;">REA 5단계 구현 - CNS-02 · 선생님께 1:1 문의 보내기</p>
+</div>
+
+<div class="msg" id="msg"></div>
+
+<div class="form">
+  <label for="authkey">학생 인증키 (학부모 로그인)</label>
+  <input id="authkey" placeholder="인증키 입력">
+  <label for="title">제목</label>
+  <input id="title" placeholder="문의 제목">
+  <label for="content">내용</label>
+  <textarea id="content" placeholder="궁금한 내용을 입력하세요"></textarea>
+  <button class="btn" onclick="submitInquiry()">전송</button>
+</div>
+
+<script src="../components/api-client.js"></script>
+<script>
+var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+
+function showMsg(text, ok) {
+  const m = document.getElementById('msg');
+  m.className = 'msg ' + (ok ? 'ok' : 'err');
+  m.textContent = text;
+}
+
+async function submitInquiry() {
+  const authKey = document.getElementById('authkey').value.trim();
+  const title = document.getElementById('title').value.trim();
+  const content = document.getElementById('content').value.trim();
+  if (!authKey) { showMsg('학생 인증키를 입력하세요.', false); return; }
+  if (!title) { showMsg('제목을 입력하세요.', false); return; }
+  if (!content) { showMsg('내용을 입력하세요.', false); return; }
+  // 학생 인증키는 X-Auth-Key 헤더로 전송. body 의 authKey 는 백엔드 식별용으로 유지.
+  const res = await apiPost(`/1/consultations`,
+    { authKey, type: 'INQUIRY', title, content }, authKey);
+  const data = await res.json();
+  if (!res.ok) { showMsg(data.message || '전송 실패', false); return; }
+  showMsg('문의가 전송되었습니다.', true);
+  document.getElementById('title').value = '';
+  document.getElementById('content').value = '';
+}
+</script>
+</body>
+</html>
