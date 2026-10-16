@@ -1,0 +1,46 @@
+name: CI
+
+# main push + PR에 대해 빌드·전체 테스트 실행
+# 비용 최소화: 문서 전용 변경은 스킵, 동일 ref의 이전 실행은 취소
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Build and test
+        run: mvn -B test
+
+      - name: Test summary
+        if: always()
+        run: |
+          echo "=== surefire 결과 ==="
+          find . -path '*/surefire-reports/TEST-*.xml' \
+          -print | head -30
+
+
