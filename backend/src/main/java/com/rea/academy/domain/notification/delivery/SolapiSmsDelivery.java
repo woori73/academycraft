@@ -2,6 +2,7 @@ package com.rea.academy.domain.notification.delivery;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
@@ -41,6 +42,7 @@ public class SolapiSmsDelivery implements PasswordResetDelivery {
     private final NotificationProperties props;
     private final HttpClient httpClient;
 
+    @Autowired
     public SolapiSmsDelivery(NotificationProperties props) {
         this(props, HttpClient.newBuilder().connectTimeout(CONNECT_TIMEOUT).build());
     }
