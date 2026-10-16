@@ -20,6 +20,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.security.MessageDigest;
 import java.security.SecureRandom;
@@ -162,9 +164,10 @@ public class AuthService {
             member.issuePasswordResetToken(token, passwordResetMinutes);
             memberRepository.save(member);
             // 토큰 로그 기록 금지. 발송 실패해도 토큰은 유효하게 유지 (재요청 가능).
-            // 발송은 비동기로 처리하여 HTTP 응답을 지연시키지 않는다.
-            deliveryService.deliverAsync(
-                    member.getPhone(), member.getEmail(), buildResetUrl(token), member.getId());
+            // 발송은 트랜잭션 커밋 후 비동기로 처리:
+            //  - 커밋 전에는 발송하지 않음 (롤백 시 미발송 보장)
+            //  - 비동기이므로 재시도·타임아웃이 HTTP 응답을 지연시키지 않음
+            scheduleDeliveryAfterCommit(member, token);
             log.info("[AUTH] 비밀번호 재설정 토큰 발급: memberId={}", member.getId());
         }
         // 존재 여부 누설 방지: 항상 동일 응답
@@ -182,6 +185,30 @@ public class AuthService {
             base = base.substring(0, base.length() - 1);
         }
         return base + "/screens/AUTH-02-password-reset.html?token=" + token;
+    }
+
+    /**
+     * 트랜잭션 커밋 후 발송 예약.
+     * 커밋 전에 발송하면 롤백 시 DB에 없는 토큰이 발송되는 문제가 생긴다.
+     * 엔티티가 커밋 후 detach될 수 있으므로 필요한 값은 미리 복사한다.
+     */
+    private void scheduleDeliveryAfterCommit(ReaMember member, String token) {
+        String phone = member.getPhone();
+        String email = member.getEmail();
+        Long memberId = member.getId();
+        String resetUrl = buildResetUrl(token);
+        Runnable send = () -> deliveryService.deliverAsync(phone, email, resetUrl, memberId);
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    send.run();
+                }
+            });
+        } else {
+            // 트랜잭션 없이 호출된 경우 (방어): 즉시 발송
+            send.run();
+        }
     }
 
     @Transactional

@@ -16,9 +16,11 @@ import java.util.concurrent.ConcurrentHashMap;
  * 제한 초과 시에도 호출자에게는 계정 존재 여부와 무관한 동일 응답을 반환해야 하므로,
  * 이 클래스는 단순히 허용 여부만 반환한다.</p>
  *
- * <p>메모리 보호:
+ * <p>메모리 보호 (fail-closed):
  * <ul>
- *   <li>키 최대 5,000개 — 초과 시 만료된 항목부터 제거</li>
+ *   <li>키 최대 5,000개 — 상한 도달 시 만료 기록만 정리</li>
+ *   <li>만료 정리 후에도 공간이 없으면 <strong>신규 키 요청을 거부</strong>
+ *       (유효한 기존 키를 절대 제거하지 않음 — 제한 우회 방지)</li>
  *   <li>매 요청마다 해당 키의 만료 타임스탬프 정리</li>
  *   <li>1,000회 요청마다 전체 만료 항목 스윕</li>
  * </ul></p>
@@ -42,6 +44,9 @@ public class PasswordResetRateLimiter {
 
     /**
      * 요청을 허용하면 true (카운트 증가), 제한 초과면 false.
+     *
+     * <p>키 상한 도달 시: 만료 기록 정리 후에도 공간이 없으면
+     * 신규 키는 거부한다. 기존 유효 키는 절대 제거하지 않는다.</p>
      */
     public synchronized boolean tryAcquire(String loginId) {
         if (loginId == null || loginId.isBlank()) {
@@ -54,12 +59,19 @@ public class PasswordResetRateLimiter {
         if (++requestCount % SWEEP_INTERVAL == 0) {
             sweepExpired(now);
         }
-        // 상한 초과 시 만료 항목 우선 제거
-        if (hits.size() >= MAX_KEYS && !hits.containsKey(key)) {
-            evictExpired(now);
-        }
 
-        Deque<Long> q = hits.computeIfAbsent(key, k -> new ArrayDeque<>());
+        Deque<Long> q = hits.get(key);
+        if (q == null) {
+            // 신규 키: 상한 도달 시 만료 정리 후에도 공간이 없으면 거부
+            if (hits.size() >= MAX_KEYS) {
+                sweepExpired(now);
+                if (hits.size() >= MAX_KEYS) {
+                    return false;
+                }
+            }
+            q = new ArrayDeque<>();
+            hits.put(key, q);
+        }
         evictExpiredTimestamps(q, now);
         if (q.size() >= props.getRateLimit().getMaxPerHour()) {
             return false;
@@ -87,25 +99,6 @@ public class PasswordResetRateLimiter {
         }
     }
 
-    /** 상한 초과 시: 만료 항목 제거, 그래도 부족하면 가장 오래된 키부터 제거 */
-    private void evictExpired(long now) {
-        sweepExpired(now);
-        while (hits.size() >= MAX_KEYS) {
-            // 가장 오래된 타임스탬프를 가진 키 제거
-            String oldestKey = null;
-            long oldestTs = Long.MAX_VALUE;
-            for (Map.Entry<String, Deque<Long>> e : hits.entrySet()) {
-                Long first = e.getValue().peekFirst();
-                if (first != null && first < oldestTs) {
-                    oldestTs = first;
-                    oldestKey = e.getKey();
-                }
-            }
-            if (oldestKey == null) break;
-            hits.remove(oldestKey);
-        }
-    }
-
     /** 테스트용 초기화 */
     public synchronized void reset() {
         hits.clear();
@@ -113,7 +106,7 @@ public class PasswordResetRateLimiter {
     }
 
     /** 테스트용: 현재 키 수 */
-    synchronized int keyCount() {
+    public synchronized int keyCount() {
         return hits.size();
     }
 }

@@ -68,4 +68,39 @@ class PasswordResetRateLimiterTest {
         limiter.reset();
         assertThat(limiter.tryAcquire("user1")).isTrue();
     }
+
+    @Test
+    @DisplayName("키 상한(5,000) 도달 시 신규 키 거부 — 유효 키는 보호됨")
+    void capReached_newKeyRejected_validKeysProtected() {
+        // 5,000개 키 채우기
+        for (int i = 0; i < 5_000; i++) {
+            assertThat(limiter.tryAcquire("bulk" + i)).as("키 %d", i).isTrue();
+        }
+        assertThat(limiter.keyCount()).isEqualTo(5_000);
+
+        // 신규 키 거부
+        assertThat(limiter.tryAcquire("newAttacker")).isFalse();
+        assertThat(limiter.keyCount()).isEqualTo(5_000);
+
+        // 기존 유효 키의 제한은 그대로 유지 (제거되지 않음)
+        for (int i = 0; i < 4; i++) {
+            assertThat(limiter.tryAcquire("bulk0")).isTrue();
+        }
+        assertThat(limiter.tryAcquire("bulk0")).isFalse(); // 5회 제한 유지
+    }
+
+    @Test
+    @DisplayName("서로 다른 ID로 우회 시도해도 상한 도달 후에는 모두 거부")
+    void differentIds_bypassBlocked() {
+        for (int i = 0; i < 5_000; i++) {
+            limiter.tryAcquire("victim" + i);
+        }
+        // 공격자가 ID를 바꿔가며 요청해도 모두 거부
+        for (int i = 0; i < 10; i++) {
+            assertThat(limiter.tryAcquire("attacker" + i))
+                    .as("우회 시도 %d", i).isFalse();
+        }
+        // 기존 키는 여전히 정상 동작
+        assertThat(limiter.tryAcquire("victim0")).isTrue();
+    }
 }
