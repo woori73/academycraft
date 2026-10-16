@@ -66,7 +66,7 @@ BuildIt 역할의 권한과 분리. SSM·S3만 허용.
             ],
             "Resource": [
                 "arn:aws:ec2:ap-northeast-2:067573916809:instance/i-09d7cabb5a42d1135",
-                "arn:aws:ssm:ap-northeast-2:067573916809:document/AWS-RunShellScript"
+                "arn:aws:ssm:ap-northeast-2::document/AWS-RunShellScript"
             ]
         },
         {
@@ -96,10 +96,24 @@ BuildIt 역할의 권한과 분리. SSM·S3만 허용.
                 "arn:aws:s3:::feel2real-buildit-deploy",
                 "arn:aws:s3:::feel2real-buildit-deploy/academycraft/*"
             ]
+        },
+        {
+            "Sid": "S3BackupWrite",
+            "Effect": "Allow",
+            "Action": [
+                "s3:PutObject",
+                "s3:GetObject",
+                "s3:DeleteObject"
+            ],
+            "Resource": "arn:aws:s3:::feel2real-buildit-deploy/backups/academycraft/*"
         }
     ]
 }
 ```
+
+**백업 버킷 정책**: `s3://feel2real-buildit-deploy/backups/academycraft/` 로 고정.
+워크플로우의 `backup_bucket` 입력은 이 prefix와 일치해야 하며,
+일치하지 않으면 사전점검에서 실패한다. 임의 버킷 지정 불가.
 
 ### 제외된 권한 (BuildIt 역할에는 있지만 여기서는 불필요)
 
@@ -146,4 +160,11 @@ Secrets Manager 시크릿 이름 (예정): `academycraft/db-admin`
 6. 역할 이름: `github-actions-academycraft-deploy`
 7. GitHub Environment `production`에 4항의 보호 규칙 설정
 
-**예상 추가 비용**: $0 (IAM 역할·Secrets Manager 1개는 무료 티어 내)
+**예상 추가 비용**: 
+- IAM 역할: $0 (무료)
+- Secrets Manager: **월 $0.40/시크릿** + API 호출 $0.05/10,000건
+  - 1개 시크릿(`academycraft/db-admin`) 기준: 월 약 $0.40 (연 약 $4.80)
+  - API 호출은 배포 시에만 발생하여 무시 가능한 수준
+  - **무료 대안**: SSM Parameter Store (SecureString)는 표준 파라미터 무료.
+    Secrets Manager의 자동 로테이션이 불필요하면 Parameter Store로 전환 가능.
+    (단, 현재 설계는 Secrets Manager 기준)
