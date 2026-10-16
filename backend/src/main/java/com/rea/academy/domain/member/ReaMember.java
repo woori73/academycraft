@@ -49,6 +49,10 @@ public class ReaMember {
     @Column(length = 20)
     private String phone;
 
+    /** 이메일 (선택, 비밀번호 재설정 링크 발송용) */
+    @Column(length = 100)
+    private String email;
+
     /**
      * 로그인 아이디 (정식 로그인용, 전역 유니크).
      * 기존 인증키 회원에게는 null일 수 있음 — 최초 로그인 설정 시 발급.
@@ -189,5 +193,10 @@ public class ReaMember {
     /** 학부모 계정의 자녀 학생 연결 */
     public void linkStudent(Long studentId) {
         this.linkedStudentId = studentId;
+    }
+
+    /** 이메일 변경 (비밀번호 재설정 링크 발송용) */
+    public void changeEmail(String email) {
+        this.email = (email == null || email.isBlank()) ? null : email.trim();
     }
 }

@@ -1,7 +1,8 @@
 package com.rea.academy.notification;
 
+import com.rea.academy.domain.member.ReaMember;
 import com.rea.academy.domain.member.ReaMemberRepository;
-import com.rea.academy.domain.notification.delivery.DeliveryResult;
+import com.rea.academy.domain.member.ReaRole;
 import com.rea.academy.domain.notification.delivery.PasswordResetDeliveryService;
 import com.rea.academy.domain.notification.delivery.PasswordResetRateLimiter;
 import com.rea.academy.dto.MemberDto;
@@ -31,7 +32,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * 비밀번호 재설정 발송 통합 테스트 (MockMvc + Mock 발송 서비스).
  *
  * <p>실제 외부 발송 없음. 검증:
- * 발송 호출·계정 존재 여부 비노출·요청 제한·발송 실패 시에도 토큰 유효.</p>
+ * 발송 호출·이메일 전달·계정 존재 여부 비노출·요청 제한·발송 실패 시에도 토큰 유효.</p>
+ *
+ * <p>참고: 발송은 @Async 비동기이나, @MockBean은 프록시를 거치지 않으므로
+ * 테스트에서는 동기적으로 호출·검증된다.</p>
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -68,22 +72,31 @@ class PasswordResetDeliveryIntegrationTest {
     @BeforeEach
     void setUp() {
         rateLimiter.reset();
-        when(deliveryService.deliver(anyString(), any(), anyString()))
-                .thenReturn(DeliveryResult.success("SMS", "mock-1"));
         Long memberId = memberService.createMember(MemberDto.CreateRequest.builder()
                 .academyId(1L).name("발송테스트").phone("010-1234-5678")
-                .role(com.rea.academy.domain.member.ReaRole.TEACHER).build()).getId();
-        String authKey = memberRepository.findById(memberId).orElseThrow().getAuthKey();
-        authService.setupCredentials(authKey, "deliveryUser", "Pass1234!");
+                .role(ReaRole.TEACHER).build()).getId();
+        ReaMember member = memberRepository.findById(memberId).orElseThrow();
+        member.changeEmail("test@example.com");
+        memberRepository.save(member);
+        authService.setupCredentials(member.getAuthKey(), "deliveryUser", "Pass1234!");
     }
 
     @Test
-    @DisplayName("존재하는 계정 → 발송 서비스 호출, 응답 메시지는 고정")
+    @DisplayName("존재하는 계정 → 발송 서비스 호출 (전화번호·이메일 전달), 응답 메시지는 고정")
     void existingAccount_delivers() throws Exception {
         String body = requestBody("deliveryUser");
         assertThat(body).contains("재설정 안내를 발송했습니다");
         verify(deliveryService, times(1))
-                .deliver(eq("010-1234-5678"), isNull(), anyString());
+                .deliverAsync(eq("010-1234-5678"), eq("test@example.com"), anyString(), anyLong());
+    }
+
+    @Test
+    @DisplayName("이메일이 null이 아닌 값으로 전달됨 (SMS→이메일 폴백 가능)")
+    void emailNotNull_passedToDelivery() throws Exception {
+        requestBody("deliveryUser");
+        verify(deliveryService).deliverAsync(
+                anyString(), argThat(email -> email != null && email.contains("@")),
+                anyString(), anyLong());
     }
 
     @Test
@@ -91,18 +104,17 @@ class PasswordResetDeliveryIntegrationTest {
     void unknownAccount_sameResponse_noDelivery() throws Exception {
         String bodyKnown = requestBody("deliveryUser");
         String bodyUnknown = requestBody("nobody123");
-        // 메시지만 비교 (resetToken은 개발 환경에서 포함되므로 제외)
         assertThat(bodyUnknown).contains("재설정 안내를 발송했습니다");
         assertThat(bodyKnown).contains("재설정 안내를 발송했습니다");
         // 존재하는 계정에 대해서만 1회 호출
-        verify(deliveryService, times(1)).deliver(anyString(), any(), anyString());
+        verify(deliveryService, times(1)).deliverAsync(anyString(), any(), anyString(), anyLong());
     }
 
     @Test
     @DisplayName("발송 실패해도 200 반환, 토큰은 유효하게 유지 (재요청 가능)")
     void deliveryFailure_tokenStillValid() throws Exception {
-        when(deliveryService.deliver(anyString(), any(), anyString()))
-                .thenReturn(DeliveryResult.failure("SMS", "SOLAPI 오류"));
+        doNothing().when(deliveryService)
+                .deliverAsync(anyString(), any(), anyString(), anyLong());
         String body = requestBody("deliveryUser");
         assertThat(body).contains("재설정 안내를 발송했습니다");
 
@@ -125,7 +137,7 @@ class PasswordResetDeliveryIntegrationTest {
         String body6 = requestBody("deliveryUser");
         assertThat(body6).contains("재설정 안내를 발송했습니다");
         // 6회째는 발송 호출 없음 (토큰 미발급)
-        verify(deliveryService, times(5)).deliver(anyString(), any(), anyString());
+        verify(deliveryService, times(5)).deliverAsync(anyString(), any(), anyString(), anyLong());
         // 6회째 응답에는 resetToken 없음
         assertThat(body6).doesNotContain("\"resetToken\":\"");
     }

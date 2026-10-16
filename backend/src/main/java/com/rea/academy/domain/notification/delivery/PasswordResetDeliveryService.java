@@ -2,6 +2,7 @@ package com.rea.academy.domain.notification.delivery;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -26,6 +27,19 @@ public class PasswordResetDeliveryService {
                                         NotificationProperties props) {
         this.deliveries = deliveries;
         this.props = props;
+    }
+
+    /**
+     * 재설정 링크 비동기 발송. HTTP 요청 스레드를 차단하지 않는다.
+     * 재시도·타임아웃이 발생해도 API 응답 시간에 영향을 주지 않는다.
+     * 결과는 로그로만 기록한다 (토큰·개인정보 미포함).
+     */
+    @Async
+    public void deliverAsync(String phone, String email, String resetUrl, Long memberId) {
+        DeliveryResult result = deliver(phone, email, resetUrl);
+        log.info("[발송] 재설정 링크 발송 완료: memberId={}, channel={}, {}",
+                memberId, result.channel(),
+                result.success() ? "성공" : "실패(" + result.error() + ")");
     }
 
     /**

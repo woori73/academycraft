@@ -3,7 +3,6 @@ package com.rea.academy.service;
 import com.rea.academy.domain.member.ReaMember;
 import com.rea.academy.domain.member.ReaMemberRepository;
 import com.rea.academy.domain.member.ReaRole;
-import com.rea.academy.domain.notification.delivery.DeliveryResult;
 import com.rea.academy.domain.notification.delivery.NotificationProperties;
 import com.rea.academy.domain.notification.delivery.PasswordResetDeliveryService;
 import com.rea.academy.domain.notification.delivery.PasswordResetRateLimiter;
@@ -163,11 +162,10 @@ public class AuthService {
             member.issuePasswordResetToken(token, passwordResetMinutes);
             memberRepository.save(member);
             // 토큰 로그 기록 금지. 발송 실패해도 토큰은 유효하게 유지 (재요청 가능).
-            DeliveryResult result = deliveryService.deliver(
-                    member.getPhone(), null, buildResetUrl(token));
-            log.info("[AUTH] 비밀번호 재설정 토큰 발급: memberId={}, delivery={}:{}",
-                    member.getId(), result.channel(),
-                    result.success() ? "성공" : "실패(" + result.error() + ")");
+            // 발송은 비동기로 처리하여 HTTP 응답을 지연시키지 않는다.
+            deliveryService.deliverAsync(
+                    member.getPhone(), member.getEmail(), buildResetUrl(token), member.getId());
+            log.info("[AUTH] 비밀번호 재설정 토큰 발급: memberId={}", member.getId());
         }
         // 존재 여부 누설 방지: 항상 동일 응답
         return AuthDto.PasswordResetRequestResponse.builder()
