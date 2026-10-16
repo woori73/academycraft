@@ -549,7 +549,8 @@ jobs:
           log "배포 중 감시 통과: 메모리 ${AVAIL_MB}MB, f2r-app·buildit-wiki 정상"
 
           log "== 7. 기동 (Flyway V1→V3 자동 적용) =="
-          # 기동 후 실패 시 AcademyCraft만 정지 (BuildIt·Wiki는 절대 건드리지 않음)
+          # 기동 실패 시에도 AcademyCraft만 정지 (BuildIt·Wiki는 절대 건드리지 않음)
+          # trap을 systemctl 실행 전에 등록하여 기동 명령 자체가 실패해도 정리됨
           # abort()는 exit 1만 수행하며, 이 trap이 academycraft만 정리한다
           # 성공 종료(exit 0) 시에는 서비스를 정지하지 않는다
           cleanup_academycraft_on_fail() {
@@ -563,12 +564,11 @@ jobs:
             fi
             # f2r-app·buildit-wiki는 절대 건드리지 않는다 (명시적)
           }
+          # 전체 배포 스크립트가 성공적으로 완료될 때까지 trap 유지
+          # (기동 실패·백업 실패·복원 검증 실패 시에도 AcademyCraft를 정지하기 위함)
+          trap cleanup_academycraft_on_fail EXIT
           systemctl enable --now academycraft
           log "academycraft.service 기동 요청"
-          # 기동 이후 실패 시에만 정리 trap 활성화 (기동 전 실패는 정리 불필요)
-          # 전체 배포 스크립트가 성공적으로 완료될 때까지 유지한다
-          # (백업·복원 검증 실패 시에도 AcademyCraft를 정지하기 위함)
-          trap cleanup_academycraft_on_fail EXIT
 
           # 기동 후 리소스 재확인
           sleep 10
@@ -687,8 +687,12 @@ jobs:
           # 정상 완료 시 정리 (INT/TERM trap 해제 후 명시적 정리)
           # EXIT trap(cleanup_academycraft_on_fail)은 유지 — 전체 스크립트 완료까지
           trap - INT TERM
+          # 정리 실패 시 배포 실패 처리 (WARNING만 출력하고 넘어가지 않음)
+          # 자격증명 파일은 정리하고, 테스트 DB 잔존 사실을 보고한 뒤 실패
           if ! cleanup_restore; then
-            log "WARNING: 복원 테스트 정리에 실패 — 수동 확인 필요"
+            # cleanup_restore가 이미 자격증명 파일을 정리했음
+            # 테스트 DB가 남아있을 수 있으므로 배포를 실패 처리
+            abort "복원 테스트 정리 실패 — 테스트 DB가 남아있을 수 있음. 수동 확인 필요"
           fi
           log "격리 복원 검증 완료 (테스트 DB·자격증명 삭제됨)"
 
