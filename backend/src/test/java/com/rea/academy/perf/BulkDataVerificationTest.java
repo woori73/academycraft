@@ -20,6 +20,7 @@ import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
@@ -45,6 +46,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @Transactional
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+// @BeforeAll에서 대량 데이터를 커밋하므로 공유 컨텍스트 오염 방지: 이 클래스 후 컨텍스트 폐기
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class BulkDataVerificationTest {
 
     private static final Long ACADEMY = 1L;
