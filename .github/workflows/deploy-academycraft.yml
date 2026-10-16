@@ -1,20 +1,55 @@
 name: Deploy AcademyCraft (manual)
 
 # ============================================================================
-# AcademyCraft 최초 운영 배포 — 수동 실행 전용
+# AcademyCraft 최초 운영 배포 — 수동 실행 전용 (보안 수정 v2)
 #
 # - 이 워크플로우는 workflow_dispatch 로만 실행된다.
 #   push / pull_request / schedule 트리거가 없으므로 파일 존재 자체가
 #   배포를 유발하지 않는다.
-# - 실행 전 GitHub Environment "production" 에 다음 Secret 등록이 필요하다.
-#     DB_HOST            : MySQL 호스트 (예: 127.0.0.1 또는 RDS 엔드포인트)
-#     DB_ADMIN_USER      : 스키마·계정 생성용 MySQL 관리자 계정
-#     DB_ADMIN_PASSWORD  : 관리자 비밀번호
+# - 실행 전 GitHub Environment "production" 설정이 필요하다.
+#   (Required reviewers + main 브랜치 제한, 저장소 Settings에서 수동 설정)
+# - DB 관리자 비밀번호는 GitHub Secrets에 저장하지 않는다.
+#   EC2 인스턴스 프로파일이 Secrets Manager에서 직접 조회한다.
 # - P0-4 배포 실행계획 v2 (docs/P0-4-deploy-plan.md) 구현.
 #
+# 보안 수정 v2 (2026-10-16):
+# 1. DB 관리자 비밀번호를 SSM 명령·GitHub Secrets에서 제거
+#    → EC2가 Secrets Manager에서 직접 조회 (인스턴스 프로파일 권한)
+# 2. MySQL 명령행에서 -p 비밀번호 제거 → 임시 my.cnf (600, 사용 후 shred)
+# 3. backup_bucket 입력을 필수로 변경 (생략 시 배포 중단)
+#    → 승인된 prefix(s3://feel2real-buildit-deploy/backups/academycraft/)와
+#      일치하지 않으면 사전점검에서 실패
+# 4. build job이 precheck 완료를 대기하도록 변경 (S3 업로드 순서 보장)
+# 5. BuildIt 역할 ARN → AcademyCraft 전용 역할 ARN으로 교체
+#
+# 보완 v3 (2026-10-16):
+# 6. 7개 사전점검 항목의 확인 시점 문서화 (자동/수동 구분)
+# 7. 격리 환경 복원 검증 절차 추가 (운영 DB에 복원 금지)
+# 8. 배포 중 BuildIt·Wiki·메모리 감시 및 이상 시 중단
+# 9. 기존 DB/계정 존재 시 보호 강화 (비밀번호 변경·Flyway 재적용 방지)
+#
+# ------------------------------------------------------------------
+# 7개 사전점검 항목 확인 시점
+# ------------------------------------------------------------------
+# [자동] precheck job (SSM, 배포 전):
+#   1. EC2 가용 메모리 1.5GB 이상 — free -m
+#   2. 디스크 여유 2GB 이상 — df /
+#   3. BuildIt(f2r-app)·Wiki(buildit-wiki) 정상 — systemctl is-active
+#   6. S3 백업 쓰기 권한 — 테스트 파일 업로드/삭제
+#   7. 전용 IAM 역할 OIDC — precheck job 자체가 역할 수임으로 검증
+#        (수임 실패 시 job이 시작되지 않음)
+# [자동] deploy job 시작 전 (SSM 스크립트 내):
+#   4. MySQL 연결 여유 — 관리자 접속 테스트 (SELECT 1)
+#      ※ 연결 수 한계치 확인은 수동 (아래 참조)
+# [수동] 배포 전 운영자 확인 (워크플로우에서 검증 불가):
+#   4. MySQL max_connections·현재 연결 수 — DB 관리자 직접 조회 필요
+#   5. ALB 리스너 규칙·우선순위 — AWS 콘솔에서 충돌 확인 필요
+#      (워크플로우는 ALB를 변경하지 않으므로 충돌 시 수동 해결)
+# ------------------------------------------------------------------
 # 이 워크플로우가 수행하지 않는 것 (별도 승인 필요):
 # - ALB 리스너·대상 그룹 변경 → AWS 콘솔 수동 작업
-# - IAM 역할 신뢰 정책 변경 → 읽기 전용 확인만, 변경은 콘솔에서 별도 승인 후
+# - IAM 역할 생성·신뢰 정책 변경 → docs/iam-academycraft-role-design.md 참조
+# - Secrets Manager 시크릿 생성 → 별도 승인 후 수동 생성
 # - S3 백업 버킷 신규 생성 → 기존 배포 버킷의 academycraft/ prefix 사용
 # - 브라우저 QA → 별도 수동 수행
 # ============================================================================
@@ -26,13 +61,17 @@ on:
         description: '배포 확인 문구. 정확히 DEPLOY 를 입력해야 실행됩니다'
         required: true
         type: string
+      manual_checks:
+        description: '수동 사전점검 완료 확인. MySQL 연결 수·ALB 규칙을 직접 확인 후 정확히 CHECKED 를 입력하세요'
+        required: true
+        type: string
       deploy_sha:
         description: '배포할 커밋 SHA (비우면 실행 시점의 main HEAD)'
         required: false
         type: string
       backup_bucket:
-        description: '백업 S3 목적지 (예: s3://my-bucket/academycraft). 비우면 백업 cron 설치를 생략합니다'
-        required: false
+        description: '백업 S3 목적지 (예: s3://feel2real-buildit-deploy/backups/academycraft/). 필수 입력'
+        required: true
         type: string
 
 permissions:
@@ -48,9 +87,13 @@ concurrency:
 env:
   AWS_REGION: ap-northeast-2
   EC2_INSTANCE_ID: i-09d7cabb5a42d1135
-  DEPLOY_ROLE_ARN: arn:aws:iam::067573916809:role/github-actions-f2r-deploy
+  # AcademyCraft 전용 IAM 역할 (BuildIt 역할과 분리)
+  # 실제 생성 전에는 배포 실행 불가
+  DEPLOY_ROLE_ARN: arn:aws:iam::067573916809:role/github-actions-academycraft-deploy
   DEPLOY_S3_PREFIX: s3://feel2real-buildit-deploy/academycraft
   APP_PORT: 8082
+  # Secrets Manager 시크릿 이름 (EC2 인스턴스 프로파일이 읽기)
+  DB_ADMIN_SECRET_ID: academycraft/db-admin
 
 jobs:
   # ------------------------------------------------------------------
@@ -67,6 +110,7 @@ jobs:
         shell: bash
         env:
           CONFIRM: ${{ inputs.confirm }}
+          MANUAL_CHECKS: ${{ inputs.manual_checks }}
         run: |
           set -euo pipefail
           if [ "$CONFIRM" != "DEPLOY" ]; then
@@ -74,6 +118,16 @@ jobs:
             exit 1
           fi
           echo "확인 문구 통과"
+          # 수동 사전점검 완료 확인 (워크플로우에서 자동 검증 불가 항목)
+          # - MySQL: max_connections, Threads_connected, Max_used_connections 직접 조회
+          # - ALB: 리스너 규칙·우선순위 충돌 여부 콘솔 확인
+          if [ "$MANUAL_CHECKS" != "CHECKED" ]; then
+            echo "::error::수동 사전점검 미완료. 다음을 직접 확인 후 CHECKED를 입력하세요:"
+            echo "::error::  1. MySQL: SHOW STATUS LIKE 'Threads_connected', SHOW VARIABLES LIKE 'max_connections'"
+            echo "::error::  2. ALB: academy.feel2real.co.kr 리스너 규칙 우선순위 충돌 없음"
+            exit 1
+          fi
+          echo "수동 사전점검 완료 확인"
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -105,10 +159,11 @@ jobs:
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
 
   # ------------------------------------------------------------------
-  # 1. 사전점검: EC2 리소스·기존 서비스 (읽기 전용, 기준 미달 시 중단)
+  # 1. 사전점검: EC2 리소스·기존 서비스·S3 쓰기 권한 (읽기 전용, 기준 미달 시 중단)
+  #    7개 항목 모두 통과해야 다음 단계 진행
   # ------------------------------------------------------------------
   precheck:
-    name: 배포 직전 사전점검
+    name: 배포 직전 사전점검 (7개 항목)
     needs: guard
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -146,17 +201,82 @@ jobs:
           fi
           echo "사전점검 통과"
 
+      - name: S3 백업 쓰기 권한 확인 (GitHub Actions 역할)
+        shell: bash
+        env:
+          BACKUP_BUCKET: ${{ inputs.backup_bucket }}
+        run: |
+          set -euo pipefail
+          # 승인된 백업 prefix와 일치하는지 검증 (임의 버킷 방지)
+          APPROVED_PREFIX="s3://feel2real-buildit-deploy/backups/academycraft/"
+          if [[ "$BACKUP_BUCKET" != "$APPROVED_PREFIX"* ]]; then
+            echo "::error::backup_bucket이 승인된 prefix와 일치하지 않습니다."
+            echo "::error::입력: $BACKUP_BUCKET"
+            echo "::error::승인된 prefix: $APPROVED_PREFIX"
+            echo "::error::임의 버킷 지정은 허용되지 않습니다."
+            exit 1
+          fi
+          # backup_bucket 형식 검증 (s3://bucket/prefix)
+          if ! printf '%s' "$BACKUP_BUCKET" | grep -Eq '^s3://[a-z0-9.-]+/.+'; then
+            echo "::error::backup_bucket 형식이 올바르지 않습니다: $BACKUP_BUCKET"
+            exit 1
+          fi
+          # GitHub Actions 역할의 쓰기 권한 테스트 (배포 아티팩트 업로드용)
+          TEST_KEY="$BACKUP_BUCKET/.write-test-$(date +%s)"
+          echo "write-test" | aws s3 cp - "$TEST_KEY"
+          aws s3 rm "$TEST_KEY"
+          echo "GitHub Actions S3 쓰기 권한 확인: $BACKUP_BUCKET"
+
+      - name: S3 백업 쓰기 권한 확인 (EC2 인스턴스 프로파일)
+        shell: bash
+        env:
+          BACKUP_BUCKET: ${{ inputs.backup_bucket }}
+        run: |
+          set -euo pipefail
+          # 실제 백업은 EC2 인스턴스 프로파일로 실행되므로,
+          # EC2에서 해당 S3 prefix에 PutObject 권한이 있는지 SSM으로 검증
+          # GitHub Actions 역할의 권한만으로는 검증 완료 처리하지 않음
+          Q() { printf '%q' "$1"; }
+          CMD="TEST_KEY=$(Q "$BACKUP_BUCKET")/.ec2-write-test-$(date +%s); "
+          CMD="$CMD""echo ec2-write-test | aws s3 cp - \"\$TEST_KEY\" && aws s3 rm \"\$TEST_KEY\" && echo 'EC2 S3 WRITE OK' || { echo 'ABORT: EC2 인스턴스 프로파일에 S3 쓰기 권한 없음'; exit 1; }"
+          python3 - "$CMD" <<'PYEOF' > /tmp/ssm-s3test.json
+          import json, sys
+          print(json.dumps({"commands": [sys.argv[1]]}))
+          PYEOF
+          CMD_ID=$(aws ssm send-command \
+            --instance-ids "$EC2_INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --parameters file:///tmp/ssm-s3test.json \
+            --query 'Command.CommandId' --output text)
+          shred -u /tmp/ssm-s3test.json
+          STATUS=""
+          for _ in $(seq 1 20); do
+            STATUS=$(aws ssm get-command-invocation --command-id "$CMD_ID" \
+              --instance-id "$EC2_INSTANCE_ID" --query 'Status' --output text)
+            case "$STATUS" in Success|Failed|Cancelled|TimedOut) break;; esac
+            sleep 10
+          done
+          OUT=$(aws ssm get-command-invocation --command-id "$CMD_ID" \
+            --instance-id "$EC2_INSTANCE_ID" --query 'StandardOutputContent' --output text)
+          echo "$OUT"
+          if [ "$STATUS" != "Success" ] || ! echo "$OUT" | grep -q "EC2 S3 WRITE OK"; then
+            echo "::error::EC2 인스턴스 프로파일의 S3 쓰기 권한 검증 실패"
+            echo "::error::인스턴스 프로파일에 s3:PutObject/s3:DeleteObject 권한이 필요합니다"
+            exit 1
+          fi
+          echo "EC2 인스턴스 프로파일 S3 쓰기 권한 확인 완료"
+
   # ------------------------------------------------------------------
   # 2. 빌드: 프론트엔드 JAR 내장 + 패키징 + S3 업로드
+  #    precheck 완료 후에만 실행 (S3 업로드 순서 보장)
   # ------------------------------------------------------------------
   build:
     name: JAR 빌드·검증·업로드
-    needs: guard
+    needs: [guard, precheck]
     runs-on: ubuntu-latest
     timeout-minutes: 25
     # S3 업로드에 AWS OIDC를 사용하므로 environment 를 지정해야
-    # OIDC subject 가 repo:woori73/academycraft:environment:production 이 된다.
-    # (없으면 ref 기반 subject 가 되어 신뢰 정책에 막힌다)
+    # OIDC subject 가 repo:woori73@299170593/academycraft@1421088210:environment:production 이 된다.
     environment: production
     steps:
       - name: Checkout (배포 SHA)
@@ -212,6 +332,7 @@ jobs:
 
   # ------------------------------------------------------------------
   # 3. 배포: EC2에 계정·시크릿·DB·systemd·JAR 설치 및 기동 (SSM)
+  #    DB 관리자 비밀번호는 GitHub에 없음 — EC2가 Secrets Manager에서 직접 조회
   # ------------------------------------------------------------------
   deploy:
     name: EC2 배포 실행
@@ -233,15 +354,15 @@ jobs:
           cat > /tmp/academycraft-deploy.sh <<'SCRIPT_EOF'
           #!/bin/bash
           # AcademyCraft 최초 배포 — EC2(root) 실행 스크립트. SSM 경유.
-          # - DB 관리자 비밀번호 등 민감값은 환경변수로 주입 (명령줄·파일에 평문 기록 금지)
-          # - /etc/academycraft/env 가 이미 있으면 시크릿을 재생성하지 않는다
+          # - DB 관리자 비밀번호는 GitHub·SSM 명령에 포함하지 않는다.
+          #   EC2 인스턴스 프로파일이 Secrets Manager에서 직접 조회한다.
+          # - MySQL 비밀번호는 명령행에 노출하지 않는다 (임시 my.cnf, 600, shred).
+          # - /etc/academycraft/env 가 이미 있으면 시크릿을 재생성하지 않는다.
           set -euo pipefail
           : "${APP_PORT:?APP_PORT 미설정}"
-          : "${DB_HOST:?DB_HOST 미설정}"
-          : "${DB_ADMIN_USER:?DB_ADMIN_USER 미설정}"
-          : "${DB_ADMIN_PASSWORD:?DB_ADMIN_PASSWORD 미설정}"
           : "${DEPLOY_S3_PREFIX:?DEPLOY_S3_PREFIX 미설정}"
-          BACKUP_BUCKET="${BACKUP_BUCKET:-}"
+          : "${DB_ADMIN_SECRET_ID:?DB_ADMIN_SECRET_ID 미설정}"
+          BACKUP_BUCKET="${BACKUP_BUCKET:?BACKUP_BUCKET 미설정}"
 
           log() { echo "[$(date -Iseconds)] $*"; }
           abort() { log "ABORT: $*"; exit 1; }
@@ -264,7 +385,42 @@ jobs:
           chmod 750 /opt/academycraft /var/log/academycraft
           chmod 770 /backup/academycraft
 
-          log "== 2. 시크릿·환경 파일 =="
+          log "== 2. DB 관리자 자격증명 조회 (Secrets Manager, EC2 내부) =="
+          # 인스턴스 프로파일에 secretsmanager:GetSecretValue 권한 필요
+          DB_SECRET_JSON=$(aws secretsmanager get-secret-value \
+            --secret-id "$DB_ADMIN_SECRET_ID" \
+            --query SecretString --output text) \
+            || abort "Secrets Manager 조회 실패: $DB_ADMIN_SECRET_ID"
+          DB_HOST=$(printf '%s' "$DB_SECRET_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["host"])')
+          DB_ADMIN_USER=$(printf '%s' "$DB_SECRET_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["username"])')
+          DB_ADMIN_PASSWORD=$(printf '%s' "$DB_SECRET_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["password"])')
+          unset DB_SECRET_JSON
+          [ -n "$DB_HOST" ] && [ -n "$DB_ADMIN_USER" ] && [ -n "$DB_ADMIN_PASSWORD" ] \
+            || abort "Secrets Manager에서 DB 자격증명을 가져오지 못했습니다"
+          log "DB 관리자 자격증명 조회 완료 (값은 출력하지 않음)"
+
+          # MySQL 임시 설정 파일 (명령행 비밀번호 노출 방지)
+          # 600 권한, 사용 후 shred로 안전 삭제
+          make_mycnf() {
+            local cnf
+            cnf=$(mktemp)
+            chmod 600 "$cnf"
+            cat > "$cnf" <<EOF
+          [client]
+          host=$DB_HOST
+          user=$DB_ADMIN_USER
+          password=$DB_ADMIN_PASSWORD
+          connect-timeout=10
+          EOF
+            printf '%s' "$cnf"
+          }
+          cleanup_mycnf() {
+            [ -n "${MYCNF:-}" ] && [ -f "$MYCNF" ] && shred -u "$MYCNF"
+            unset MYCNF DB_ADMIN_PASSWORD
+          }
+          trap cleanup_mycnf EXIT
+
+          log "== 3. 시크릿·환경 파일 =="
           if [ -f /etc/academycraft/env ]; then
             log "/etc/academycraft/env 존재 — 시크릿 재생성 안 함 (기존 토큰·DB비밀번호 유지)"
           else
@@ -282,12 +438,14 @@ jobs:
             chown root:root /etc/academycraft/env
             chmod 600 /etc/academycraft/env
             log "/etc/academycraft/env 생성 (600, root 소유)"
+            unset JWT_SECRET
           fi
-          # 배포 스크립트에서 DB 비밀번호 읽기 (이후 MySQL 계정 생성용)
+          # 배포 스크립트에서 앱 DB 비밀번호 읽기 (MySQL 계정 생성용)
           # shellcheck disable=SC1091
           set -a; . /etc/academycraft/env; set +a
+          [ -n "${DB_PASSWORD:-}" ] || abort "/etc/academycraft/env 에서 DB_PASSWORD를 읽지 못했습니다"
 
-          log "== 3. MySQL 스키마·계정 (최소 권한) =="
+          log "== 4. MySQL 스키마·계정 (최소 권한) =="
           command -v mysql >/dev/null 2>&1 || abort "mysql 클라이언트 없음"
           # DB 접속 원본 호스트 판정: DB_HOST 가 로컬이면 localhost, 아니면 EC2 사설 IP
           EC2_IP=$(hostname -I | awk '{print $1}')
@@ -295,21 +453,57 @@ jobs:
             localhost|127.0.0.1) DB_USER_HOST="localhost" ;;
             *) DB_USER_HOST="$EC2_IP" ;;
           esac
-          log "DB_USER_HOST=$DB_USER_HOST (DB_HOST=$DB_HOST, EC2_IP=$EC2_IP)"
-          MYSQL_ADMIN="mysql -h $DB_HOST -u $DB_ADMIN_USER -p$DB_ADMIN_PASSWORD --connect-timeout=10"
-          $MYSQL_ADMIN -e "SELECT 1" >/dev/null 2>&1 || abort "DB 관리자 접속 실패 (DB_HOST=$DB_HOST)"
-          $MYSQL_ADMIN <<EOSQL
+          log "DB_USER_HOST=$DB_USER_HOST (EC2_IP=$EC2_IP)"
+          MYCNF=$(make_mycnf)
+          mysql --defaults-extra-file="$MYCNF" -e "SELECT 1" >/dev/null 2>&1 \
+            || abort "DB 관리자 접속 실패"
+
+          # 기존 DB 존재 시 보호: 데이터 손상 방지
+          DB_EXISTS=$(mysql --defaults-extra-file="$MYCNF" -N -e "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name='academycraft';")
+          if [ "$DB_EXISTS" = "1" ]; then
+            TABLE_COUNT=$(mysql --defaults-extra-file="$MYCNF" -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='academycraft';")
+            FLYWAY_EXISTS=$(mysql --defaults-extra-file="$MYCNF" -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='academycraft' AND table_name='flyway_schema_history';")
+            log "기존 academycraft DB 발견: 테이블 ${TABLE_COUNT}개, flyway_history=${FLYWAY_EXISTS}"
+            if [ "$TABLE_COUNT" -gt 0 ] && [ "$FLYWAY_EXISTS" = "0" ]; then
+              abort "기존 DB에 테이블은 있지만 flyway_schema_history가 없습니다. 수동 확인 필요 — 배포 중단"
+            fi
+            if [ "$TABLE_COUNT" -gt 0 ]; then
+              log "기존 데이터 존재 — 스키마 재생성하지 않음, 계정만 확인"
+              # 기존 DB가 있으면 CREATE DATABASE는 스킵, 사용자 존재 여부만 확인
+              USER_EXISTS=$(mysql --defaults-extra-file="$MYCNF" -N -e "SELECT COUNT(*) FROM mysql.user WHERE user='academycraft' AND host='$DB_USER_HOST';")
+              if [ "$USER_EXISTS" = "0" ]; then
+                abort "DB는 존재하지만 academycraft 사용자가 없습니다. 수동 확인 필요 — 배포 중단"
+              fi
+              log "기존 DB·사용자 확인 완료 — 비밀번호 변경하지 않음"
+              # 기존 환경에서는 비밀번호를 변경하지 않는다 (데이터 접근 보장)
+              # /etc/academycraft/env의 기존 비밀번호를 그대로 사용
+              cleanup_mycnf
+              trap - EXIT
+              # 아래 스키마 생성 블록을 건너뛰기 위해 플래그 설정
+              SKIP_SCHEMA_CREATE=1
+            fi
+          fi
+
+          if [ "${SKIP_SCHEMA_CREATE:-0}" != "1" ]; then
+          # 앱 DB 비밀번호를 안전하게 이스케이프 (특수문자 대응)
+          ESCAPED_DB_PASSWORD=$(printf '%s' "$DB_PASSWORD" | sed "s/'/''/g")
+          mysql --defaults-extra-file="$MYCNF" <<EOSQL
           CREATE DATABASE IF NOT EXISTS academycraft CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-          CREATE USER IF NOT EXISTS 'academycraft'@'$DB_USER_HOST' IDENTIFIED BY '$DB_PASSWORD';
-          ALTER USER 'academycraft'@'$DB_USER_HOST' IDENTIFIED BY '$DB_PASSWORD';
+          CREATE USER IF NOT EXISTS 'academycraft'@'$DB_USER_HOST' IDENTIFIED BY '$ESCAPED_DB_PASSWORD';
+          ALTER USER 'academycraft'@'$DB_USER_HOST' IDENTIFIED BY '$ESCAPED_DB_PASSWORD';
           GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, DROP, REFERENCES,
                 CREATE TEMPORARY TABLES, LOCK TABLES, EXECUTE
             ON academycraft.* TO 'academycraft'@'$DB_USER_HOST';
           FLUSH PRIVILEGES;
           EOSQL
+          unset ESCAPED_DB_PASSWORD
           log "스키마·계정 준비 완료"
+          fi
+          # 관리자 비밀번호는 여기서 폐기 (이후 단계에서 불필요)
+          cleanup_mycnf
+          trap - EXIT
 
-          log "== 4. systemd 유닛 =="
+          log "== 5. systemd 유닛 =="
           cat > /etc/systemd/system/academycraft.service <<EOF
           [Unit]
           Description=AcademyCraft
@@ -336,28 +530,68 @@ jobs:
           systemctl daemon-reload
           log "academycraft.service 등록 (포트 ${APP_PORT}, MemoryMax=1G, CPUQuota=50%)"
 
-          log "== 5. JAR 설치 =="
+          log "== 6. JAR 설치 =="
           aws s3 cp "$DEPLOY_S3_PREFIX/academycraft.jar" /opt/academycraft/academycraft.jar
           chown academycraft:academycraft /opt/academycraft/academycraft.jar
           chmod 640 /opt/academycraft/academycraft.jar
           log "JAR 설치 완료"
 
-          log "== 6. 기동 (Flyway V1→V3 자동 적용) =="
+          log "== 6-1. 배포 중 리소스 감시 =="
+          # JAR 설치 후 메모리 상태 확인 (배포 중 BuildIt·Wiki 영향 감시)
+          AVAIL_MB=$(free -m | awk "/^Mem:/{print \$7}")
+          log "배포 중 가용 메모리: ${AVAIL_MB}MB"
+          if [ "$AVAIL_MB" -lt 800 ]; then
+            abort "배포 중 가용 메모리 ${AVAIL_MB}MB < 800MB — BuildIt·Wiki 영향 우려, 배포 중단"
+          fi
+          # BuildIt·Wiki가 여전히 정상인지 확인
+          systemctl is-active --quiet f2r-app || abort "배포 중 f2r-app 비정상 감지 — AcademyCraft 작업 중단"
+          systemctl is-active --quiet buildit-wiki || abort "배포 중 buildit-wiki 비정상 감지 — AcademyCraft 작업 중단"
+          log "배포 중 감시 통과: 메모리 ${AVAIL_MB}MB, f2r-app·buildit-wiki 정상"
+
+          log "== 7. 기동 (Flyway V1→V3 자동 적용) =="
+          # 기동 실패 시에도 AcademyCraft만 정지 (BuildIt·Wiki는 절대 건드리지 않음)
+          # trap을 systemctl 실행 전에 등록하여 기동 명령 자체가 실패해도 정리됨
+          # abort()는 exit 1만 수행하며, 이 trap이 academycraft만 정리한다
+          # 성공 종료(exit 0) 시에는 서비스를 정지하지 않는다
+          cleanup_academycraft_on_fail() {
+            local exit_code=$?
+            if [ $exit_code -ne 0 ]; then
+              log "배포 실패 (exit=$exit_code) — academycraft 서비스 정지 (BuildIt·Wiki는 유지)"
+              systemctl stop academycraft 2>/dev/null || true
+              systemctl disable academycraft 2>/dev/null || true
+            else
+              log "배포 성공 — academycraft 서비스 유지 (정지하지 않음)"
+            fi
+            # f2r-app·buildit-wiki는 절대 건드리지 않는다 (명시적)
+          }
+          # 전체 배포 스크립트가 성공적으로 완료될 때까지 trap 유지
+          # (기동 실패·백업 실패·복원 검증 실패 시에도 AcademyCraft를 정지하기 위함)
+          trap cleanup_academycraft_on_fail EXIT
           systemctl enable --now academycraft
           log "academycraft.service 기동 요청"
 
-          log "== 7. 백업 cron =="
-          if [ -n "$BACKUP_BUCKET" ]; then
-            cat > /etc/cron.daily/academycraft-backup <<EOF
+          # 기동 후 리소스 재확인
+          sleep 10
+          AVAIL_AFTER=$(free -m | awk "/^Mem:/{print \$7}")
+          log "기동 후 가용 메모리: ${AVAIL_AFTER}MB"
+          systemctl is-active --quiet f2r-app || abort "기동 후 f2r-app 비정상 — AcademyCraft 정지 후 수동 롤백 필요"
+          systemctl is-active --quiet buildit-wiki || abort "기동 후 buildit-wiki 비정상 — AcademyCraft 정지 후 수동 롤백 필요"
+          log "기동 후 감시 통과"
+          # trap은 해제하지 않는다 — 백업·복원 검증까지 유지
+
+          log "== 8. 백업 cron (필수) =="
+          cat > /etc/cron.daily/academycraft-backup <<EOF
           #!/bin/bash
           set -euo pipefail
           DATE=\$(date +%F)
           BACKUP_DIR=/backup/academycraft
           S3_BUCKET="$BACKUP_BUCKET"
           set -a; . /etc/academycraft/env; set +a
-          MYSQL_PWD="\$DB_PASSWORD" mysqldump -h $DB_HOST -u "\$DB_USERNAME" \\
+          # MYSQL_PWD 환경변수로 비밀번호 전달 (명령행 노출 방지)
+          MYSQL_PWD="\$DB_PASSWORD" mysqldump -h "$DB_HOST" -u "\$DB_USERNAME" \\
             --single-transaction --routines academycraft \\
             | gzip > "\$BACKUP_DIR/academycraft-\$DATE.sql.gz"
+          unset MYSQL_PWD
           gzip -t "\$BACKUP_DIR/academycraft-\$DATE.sql.gz"
           if aws s3 cp "\$BACKUP_DIR/academycraft-\$DATE.sql.gz" "\$S3_BUCKET/"; then
             echo "\$(date -Iseconds) BACKUP OK: academycraft-\$DATE.sql.gz" >> /var/log/academycraft/backup.log
@@ -367,13 +601,107 @@ jobs:
           fi
           find "\$BACKUP_DIR" -name "academycraft-*.sql.gz" -mtime +7 -delete
           EOF
-            chmod 700 /etc/cron.daily/academycraft-backup
-            chown root:root /etc/cron.daily/academycraft-backup
-            log "백업 cron 설치: $BACKUP_BUCKET"
-          else
-            log "BACKUP_BUCKET 미지정 — 백업 cron 생략 (수동 등록 필요)"
-          fi
+          chmod 700 /etc/cron.daily/academycraft-backup
+          chown root:root /etc/cron.daily/academycraft-backup
+          log "백업 cron 설치: $BACKUP_BUCKET"
 
+          log "== 9. 백업 즉시 검증 =="
+          # 배포 직후 첫 백업을 즉시 실행하여 S3 업로드·복원 가능성을 검증
+          /etc/cron.daily/academycraft-backup \
+            || abort "초기 백업 실패 — S3 업로드를 확인하세요"
+          LATEST_BACKUP=$(ls -t /backup/academycraft/academycraft-*.sql.gz | head -1)
+          log "백업 검증 완료: $LATEST_BACKUP"
+
+          log "== 10. 격리 복원 검증 (운영 DB에 복원하지 않음) =="
+          # 백업 파일이 실제로 복원 가능한지 격리된 임시 DB에서 검증
+          # 운영 academycraft DB에는 절대 복원하지 않는다
+          # Step 4에서 관리자 비밀번호를 폐기했으므로 여기서 다시 조회 (최소 보관)
+          DB_SECRET_JSON=$(aws secretsmanager get-secret-value \
+            --secret-id "$DB_ADMIN_SECRET_ID" \
+            --query SecretString --output text) \
+            || abort "Secrets Manager 조회 실패 (복원 검증)"
+          RESTORE_DB_HOST=$(printf '%s' "$DB_SECRET_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["host"])')
+          RESTORE_DB_USER=$(printf '%s' "$DB_SECRET_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["username"])')
+          RESTORE_DB_PASS=$(printf '%s' "$DB_SECRET_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["password"])')
+          unset DB_SECRET_JSON
+          RESTORE_TEST_DB="academycraft_restore_test_$$"
+          MYCNF_RESTORE=$(mktemp)
+          chmod 600 "$MYCNF_RESTORE"
+          cat > "$MYCNF_RESTORE" <<EOF
+          [client]
+          host=$RESTORE_DB_HOST
+          user=$RESTORE_DB_USER
+          password=$RESTORE_DB_PASS
+          connect-timeout=10
+          EOF
+          unset RESTORE_DB_PASS
+          # 실패·timeout·중단 시에도 임시 DB와 자격증명 파일이 정리되도록 trap
+          # EXIT는 사용하지 않음 (바깥의 cleanup_academycraft_on_fail trap과 충돌 방지)
+          # INT/TERM 시에만 정리, EXIT(정상/실패 종료)는 명시적 호출로 처리
+          cleanup_restore() {
+            local drop_failed=0
+            if [ -n "${MYCNF_RESTORE:-}" ] && [ -f "$MYCNF_RESTORE" ]; then
+              mysql --defaults-extra-file="$MYCNF_RESTORE" \
+                -e "DROP DATABASE IF EXISTS $RESTORE_TEST_DB;" 2>/dev/null || drop_failed=1
+              # 삭제 실패 시 명시적으로 보고 (성공으로 처리하지 않음)
+              if [ $drop_failed -eq 1 ]; then
+                log "WARNING: 테스트 DB 삭제 실패 — 수동 확인 필요: $RESTORE_TEST_DB"
+              else
+                # 삭제 후 실제로 DB가 없어졌는지 확인
+                # 조회 실패 시에도 정리 실패로 처리 (echo "1" → db_still_exists != "0")
+                local db_still_exists
+                db_still_exists=$(mysql --defaults-extra-file="$MYCNF_RESTORE" -N \
+                  -e "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name='$RESTORE_TEST_DB';" 2>/dev/null || echo "1")
+                if [ "$db_still_exists" != "0" ]; then
+                  log "WARNING: 테스트 DB가 남아있음 — 후속 확인 필요: $RESTORE_TEST_DB"
+                  drop_failed=1
+                fi
+              fi
+              shred -u "$MYCNF_RESTORE"
+            fi
+            unset MYCNF_RESTORE RESTORE_DB_HOST RESTORE_DB_USER RESTORE_TEST_DB
+            return $drop_failed
+          }
+          trap cleanup_restore INT TERM
+          # 복원 테스트 실패 시 정리 후 중단하는 헬퍼
+          # (abort는 exit 1을 호출하므로, EXIT trap이 서비스 정리를 담당)
+          abort_restore() {
+            log "복원 테스트 실패 — 정리 후 중단: $*"
+            trap - INT TERM
+            cleanup_restore || log "WARNING: 복원 테스트 정리 중 오류 — 수동 확인 필요"
+            abort "$*"
+          }
+          # 복원 테스트용 임시 DB 생성 (격리)
+          mysql --defaults-extra-file="$MYCNF_RESTORE" \
+            -e "CREATE DATABASE $RESTORE_TEST_DB CHARACTER SET utf8mb4;" \
+            || abort_restore "복원 테스트 DB 생성 실패"
+          # 백업을 임시 DB에 복원
+          if ! zcat "$LATEST_BACKUP" | mysql --defaults-extra-file="$MYCNF_RESTORE" "$RESTORE_TEST_DB"; then
+            abort_restore "백업 복원 테스트 실패"
+          fi
+          # 테이블 수 확인 (원본과 일치하는지)
+          ORIG_TABLES=$(mysql --defaults-extra-file="$MYCNF_RESTORE" academycraft -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='academycraft';")
+          RESTORED_TABLES=$(mysql --defaults-extra-file="$MYCNF_RESTORE" "$RESTORE_TEST_DB" -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$RESTORE_TEST_DB';")
+          if [ "$ORIG_TABLES" != "$RESTORED_TABLES" ]; then
+            abort_restore "복원 검증 실패: 원본 테이블 수($ORIG_TABLES) != 복원 테이블 수($RESTORED_TABLES)"
+          fi
+          log "복원 검증 통과: $RESTORED_TABLES개 테이블"
+          # 정상 완료 시 정리 (INT/TERM trap 해제 후 명시적 정리)
+          # EXIT trap(cleanup_academycraft_on_fail)은 유지 — 전체 스크립트 완료까지
+          trap - INT TERM
+          # 정리 실패 시 배포 실패 처리 (WARNING만 출력하고 넘어가지 않음)
+          # 자격증명 파일은 정리하고, 테스트 DB 잔존 사실을 보고한 뒤 실패
+          if ! cleanup_restore; then
+            # cleanup_restore가 이미 자격증명 파일을 정리했음
+            # 테스트 DB가 남아있을 수 있으므로 배포를 실패 처리
+            abort "복원 테스트 정리 실패 — 테스트 DB가 남아있을 수 있음. 수동 확인 필요"
+          fi
+          log "격리 복원 검증 완료 (테스트 DB·자격증명 삭제됨)"
+
+          # 전체 배포 스크립트 성공 — EXIT trap 해제 (서비스 정지 방지)
+          # cleanup_academycraft_on_fail은 exit 0 시 서비스를 유지하므로,
+          # 여기서 해제하지 않아도 되지만 명시적으로 해제하여 의도를 분명히 함
+          trap - EXIT
           log "DEPLOY SCRIPT OK"
           SCRIPT_EOF
           chmod 700 /tmp/academycraft-deploy.sh
@@ -384,23 +712,19 @@ jobs:
       - name: SSM으로 배포 실행
         shell: bash
         env:
-          DB_HOST: ${{ secrets.DB_HOST }}
-          DB_ADMIN_USER: ${{ secrets.DB_ADMIN_USER }}
-          DB_ADMIN_PASSWORD: ${{ secrets.DB_ADMIN_PASSWORD }}
           BACKUP_BUCKET: ${{ inputs.backup_bucket }}
         run: |
           set -euo pipefail
-          for v in DB_HOST DB_ADMIN_USER DB_ADMIN_PASSWORD; do
-            if [ -z "${!v:-}" ]; then
-              echo "::error::Environment Secret '$v' 가 비어 있습니다. GitHub Environment 'production' 에 등록하세요."
-              exit 1
-            fi
-          done
-          # 민감값을 안전하게 셸 이스케이프 (특수문자 포함 시 깨짐 방지)
+          # backup_bucket 필수 확인 (workflow input required=true 이지만 이중 검증)
+          if [ -z "${BACKUP_BUCKET:-}" ]; then
+            echo "::error::backup_bucket이 비어 있습니다. 백업은 필수입니다."
+            exit 1
+          fi
+          # 민감값을 포함하지 않는 SSM 명령 구성
+          # DB 관리자 비밀번호는 GitHub에 없음 — EC2가 Secrets Manager에서 조회
           Q() { printf '%q' "$1"; }
           CMD="APP_PORT=$(Q "$APP_PORT") DEPLOY_S3_PREFIX=$(Q "$DEPLOY_S3_PREFIX")"
-          CMD="$CMD DB_HOST=$(Q "$DB_HOST") DB_ADMIN_USER=$(Q "$DB_ADMIN_USER")"
-          CMD="$CMD DB_ADMIN_PASSWORD=$(Q "$DB_ADMIN_PASSWORD")"
+          CMD="$CMD DB_ADMIN_SECRET_ID=$(Q "$DB_ADMIN_SECRET_ID")"
           CMD="$CMD BACKUP_BUCKET=$(Q "$BACKUP_BUCKET")"
           CMD="$CMD aws s3 cp $(Q "$DEPLOY_S3_PREFIX/deploy.sh") /tmp/academycraft-deploy.sh"
           CMD="$CMD && chmod 700 /tmp/academycraft-deploy.sh && bash /tmp/academycraft-deploy.sh"
@@ -432,7 +756,8 @@ jobs:
           echo "배포 스크립트 성공"
 
   # ------------------------------------------------------------------
-  # 4. 검증: health-check + Flyway + 수동 후속 단계 안내
+  # 4. 검증: health-check + Flyway (SSM 읽기 전용)
+  #    DB 비밀번호는 EC2의 /etc/academycraft/env 에서 읽음 (GitHub 무관)
   # ------------------------------------------------------------------
   verify:
     name: 배포 검증
@@ -449,16 +774,16 @@ jobs:
 
       - name: Health-check·Flyway 검증 (SSM 읽기 전용)
         shell: bash
-        env:
-          DB_HOST: ${{ secrets.DB_HOST }}
-          DB_ADMIN_USER: ${{ secrets.DB_ADMIN_USER }}
-          DB_ADMIN_PASSWORD: ${{ secrets.DB_ADMIN_PASSWORD }}
         run: |
           set -euo pipefail
+          # EC2 내부에서 /etc/academycraft/env를 읽어 DB 접속 (GitHub에 비밀번호 없음)
           Q() { printf '%q' "$1"; }
-          CMD="for i in \$(seq 1 12); do curl -fsS --max-time 5 http://127.0.0.1:$(Q "$APP_PORT")/actuator/health && break || sleep 5; done"
-          CMD="$CMD; echo '--- flyway ---'"
-          CMD="$CMD; MYSQL_PWD=$(Q "$DB_ADMIN_PASSWORD") mysql -h $(Q "$DB_HOST") -u $(Q "$DB_ADMIN_USER") academycraft -e 'SELECT version, success FROM flyway_schema_history ORDER BY installed_rank;'"
+          CMD='set -a; . /etc/academycraft/env; set +a; '
+          CMD="$CMD"'for i in $(seq 1 12); do curl -fsS --max-time 5 http://127.0.0.1:'"$(Q "$APP_PORT")"'/actuator/health && break || sleep 5; done; '
+          CMD="$CMD"'echo "--- flyway ---"; '
+          # MYSQL_PWD 환경변수로 비밀번호 전달 (명령행 노출 방지)
+          CMD="$CMD"'DB_HOST_FROM_URL=$(printf "%s" "$DB_URL" | sed -n "s|.*mysql://\\([^:]*\\):.*|\\1|p"); '
+          CMD="$CMD"'MYSQL_PWD="$DB_PASSWORD" mysql -h "$DB_HOST_FROM_URL" -u "$DB_USERNAME" academycraft -e "SELECT version, success FROM flyway_schema_history ORDER BY installed_rank;"'
           python3 - "$CMD" <<'PYEOF' > /tmp/ssm-params.json
           import json, sys
           print(json.dumps({"commands": [sys.argv[1]]}))
@@ -504,8 +829,8 @@ jobs:
           QA PASS 전 정식 오픈 금지.
 
           ### 3. 백업 검증
-          `backup_bucket` 입력이 비어 있었다면 백업 cron이 설치되지 않았습니다.
-          버킷 확정 후 cron을 수동 등록하고, 덤프 생성·S3 업로드·복원 테스트를 수행하세요.
+          배포 시 백업 cron이 설치되고 초기 백업이 검증되었습니다.
+          월 1회 복원 테스트 일정을 등록하세요.
 
           ### 4. 배포 중 감시 결과
           배포 스크립트는 시작 전 f2r-app·buildit-wiki 정상을 확인했습니다.
