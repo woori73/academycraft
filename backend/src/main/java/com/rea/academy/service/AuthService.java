@@ -3,6 +3,9 @@ package com.rea.academy.service;
 import com.rea.academy.domain.member.ReaMember;
 import com.rea.academy.domain.member.ReaMemberRepository;
 import com.rea.academy.domain.member.ReaRole;
+import com.rea.academy.domain.notification.delivery.NotificationProperties;
+import com.rea.academy.domain.notification.delivery.PasswordResetDeliveryService;
+import com.rea.academy.domain.notification.delivery.PasswordResetRateLimiter;
 import com.rea.academy.dto.AuthDto;
 import com.rea.academy.security.AuthContext;
 import com.rea.academy.security.AuthContextHolder;
@@ -17,6 +20,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.security.MessageDigest;
 import java.security.SecureRandom;
@@ -39,6 +44,9 @@ public class AuthService {
 
     private final ReaMemberRepository memberRepository;
     private final JwtTokenProvider tokenProvider;
+    private final PasswordResetDeliveryService deliveryService;
+    private final PasswordResetRateLimiter rateLimiter;
+    private final NotificationProperties notificationProps;
 
     @Value("${rea.security.bcrypt-strength:12}")
     private int bcryptStrength;
@@ -146,14 +154,20 @@ public class AuthService {
 
     @Transactional
     public AuthDto.PasswordResetRequestResponse requestPasswordReset(String loginId) {
+        // 요청 제한: 초과해도 계정 존재 여부를 누설하지 않도록 동일 응답 반환
+        boolean allowed = rateLimiter.tryAcquire(loginId);
         Optional<ReaMember> opt = memberRepository.findByLoginIdAndActiveTrue(loginId);
         String token = null;
-        if (opt.isPresent() && opt.get().hasCredentials()) {
+        if (allowed && opt.isPresent() && opt.get().hasCredentials()) {
             ReaMember member = opt.get();
             token = randomToken();
             member.issuePasswordResetToken(token, passwordResetMinutes);
             memberRepository.save(member);
-            // 운영: 여기서 SMS·이메일 발송 연동 (현재 미구현 — 토큰 로그 기록 금지)
+            // 토큰 로그 기록 금지. 발송 실패해도 토큰은 유효하게 유지 (재요청 가능).
+            // 발송은 트랜잭션 커밋 후 비동기로 처리:
+            //  - 커밋 전에는 발송하지 않음 (롤백 시 미발송 보장)
+            //  - 비동기이므로 재시도·타임아웃이 HTTP 응답을 지연시키지 않음
+            scheduleDeliveryAfterCommit(member, token);
             log.info("[AUTH] 비밀번호 재설정 토큰 발급: memberId={}", member.getId());
         }
         // 존재 여부 누설 방지: 항상 동일 응답
@@ -161,6 +175,40 @@ public class AuthService {
                 .resetToken(exposeResetToken ? token : null)
                 .message("입력한 아이디가 등록되어 있으면 재설정 안내를 발송했습니다.")
                 .build();
+    }
+
+    private String buildResetUrl(String token) {
+        String base = notificationProps.getResetBaseUrl();
+        if (base == null || base.isBlank()) {
+            base = "";
+        } else if (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        return base + "/screens/AUTH-02-password-reset.html?token=" + token;
+    }
+
+    /**
+     * 트랜잭션 커밋 후 발송 예약.
+     * 커밋 전에 발송하면 롤백 시 DB에 없는 토큰이 발송되는 문제가 생긴다.
+     * 엔티티가 커밋 후 detach될 수 있으므로 필요한 값은 미리 복사한다.
+     */
+    private void scheduleDeliveryAfterCommit(ReaMember member, String token) {
+        String phone = member.getPhone();
+        String email = member.getEmail();
+        Long memberId = member.getId();
+        String resetUrl = buildResetUrl(token);
+        Runnable send = () -> deliveryService.deliverAsync(phone, email, resetUrl, memberId);
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    send.run();
+                }
+            });
+        } else {
+            // 트랜잭션 없이 호출된 경우 (방어): 즉시 발송
+            send.run();
+        }
     }
 
     @Transactional
