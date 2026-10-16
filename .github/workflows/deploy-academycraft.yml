@@ -154,6 +154,10 @@ jobs:
     needs: guard
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    # S3 업로드에 AWS OIDC를 사용하므로 environment 를 지정해야
+    # OIDC subject 가 repo:woori73/academycraft:environment:production 이 된다.
+    # (없으면 ref 기반 subject 가 되어 신뢰 정책에 막힌다)
+    environment: production
     steps:
       - name: Checkout (배포 SHA)
         uses: actions/checkout@v4
