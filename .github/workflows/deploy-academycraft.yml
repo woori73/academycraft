@@ -61,12 +61,16 @@ on:
         description: '배포 확인 문구. 정확히 DEPLOY 를 입력해야 실행됩니다'
         required: true
         type: string
+      manual_checks:
+        description: '수동 사전점검 완료 확인. MySQL 연결 수·ALB 규칙을 직접 확인 후 정확히 CHECKED 를 입력하세요'
+        required: true
+        type: string
       deploy_sha:
         description: '배포할 커밋 SHA (비우면 실행 시점의 main HEAD)'
         required: false
         type: string
       backup_bucket:
-        description: '백업 S3 목적지 (예: s3://my-bucket/academycraft). 필수 입력'
+        description: '백업 S3 목적지 (예: s3://feel2real-buildit-deploy/backups/academycraft/). 필수 입력'
         required: true
         type: string
 
@@ -106,6 +110,7 @@ jobs:
         shell: bash
         env:
           CONFIRM: ${{ inputs.confirm }}
+          MANUAL_CHECKS: ${{ inputs.manual_checks }}
         run: |
           set -euo pipefail
           if [ "$CONFIRM" != "DEPLOY" ]; then
@@ -113,6 +118,16 @@ jobs:
             exit 1
           fi
           echo "확인 문구 통과"
+          # 수동 사전점검 완료 확인 (워크플로우에서 자동 검증 불가 항목)
+          # - MySQL: max_connections, Threads_connected, Max_used_connections 직접 조회
+          # - ALB: 리스너 규칙·우선순위 충돌 여부 콘솔 확인
+          if [ "$MANUAL_CHECKS" != "CHECKED" ]; then
+            echo "::error::수동 사전점검 미완료. 다음을 직접 확인 후 CHECKED를 입력하세요:"
+            echo "::error::  1. MySQL: SHOW STATUS LIKE 'Threads_connected', SHOW VARIABLES LIKE 'max_connections'"
+            echo "::error::  2. ALB: academy.feel2real.co.kr 리스너 규칙 우선순위 충돌 없음"
+            exit 1
+          fi
+          echo "수동 사전점검 완료 확인"
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -186,7 +201,7 @@ jobs:
           fi
           echo "사전점검 통과"
 
-      - name: S3 백업 쓰기 권한 확인
+      - name: S3 백업 쓰기 권한 확인 (GitHub Actions 역할)
         shell: bash
         env:
           BACKUP_BUCKET: ${{ inputs.backup_bucket }}
@@ -206,11 +221,50 @@ jobs:
             echo "::error::backup_bucket 형식이 올바르지 않습니다: $BACKUP_BUCKET"
             exit 1
           fi
-          # 쓰기 권한 테스트 (빈 파일 업로드 후 삭제)
+          # GitHub Actions 역할의 쓰기 권한 테스트 (배포 아티팩트 업로드용)
           TEST_KEY="$BACKUP_BUCKET/.write-test-$(date +%s)"
           echo "write-test" | aws s3 cp - "$TEST_KEY"
           aws s3 rm "$TEST_KEY"
-          echo "S3 백업 쓰기 권한 확인: $BACKUP_BUCKET"
+          echo "GitHub Actions S3 쓰기 권한 확인: $BACKUP_BUCKET"
+
+      - name: S3 백업 쓰기 권한 확인 (EC2 인스턴스 프로파일)
+        shell: bash
+        env:
+          BACKUP_BUCKET: ${{ inputs.backup_bucket }}
+        run: |
+          set -euo pipefail
+          # 실제 백업은 EC2 인스턴스 프로파일로 실행되므로,
+          # EC2에서 해당 S3 prefix에 PutObject 권한이 있는지 SSM으로 검증
+          # GitHub Actions 역할의 권한만으로는 검증 완료 처리하지 않음
+          Q() { printf '%q' "$1"; }
+          CMD="TEST_KEY=$(Q "$BACKUP_BUCKET")/.ec2-write-test-$(date +%s); "
+          CMD="$CMD""echo ec2-write-test | aws s3 cp - \"\$TEST_KEY\" && aws s3 rm \"\$TEST_KEY\" && echo 'EC2 S3 WRITE OK' || { echo 'ABORT: EC2 인스턴스 프로파일에 S3 쓰기 권한 없음'; exit 1; }"
+          python3 - "$CMD" <<'PYEOF' > /tmp/ssm-s3test.json
+          import json, sys
+          print(json.dumps({"commands": [sys.argv[1]]}))
+          PYEOF
+          CMD_ID=$(aws ssm send-command \
+            --instance-ids "$EC2_INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --parameters file:///tmp/ssm-s3test.json \
+            --query 'Command.CommandId' --output text)
+          shred -u /tmp/ssm-s3test.json
+          STATUS=""
+          for _ in $(seq 1 20); do
+            STATUS=$(aws ssm get-command-invocation --command-id "$CMD_ID" \
+              --instance-id "$EC2_INSTANCE_ID" --query 'Status' --output text)
+            case "$STATUS" in Success|Failed|Cancelled|TimedOut) break;; esac
+            sleep 10
+          done
+          OUT=$(aws ssm get-command-invocation --command-id "$CMD_ID" \
+            --instance-id "$EC2_INSTANCE_ID" --query 'StandardOutputContent' --output text)
+          echo "$OUT"
+          if [ "$STATUS" != "Success" ] || ! echo "$OUT" | grep -q "EC2 S3 WRITE OK"; then
+            echo "::error::EC2 인스턴스 프로파일의 S3 쓰기 권한 검증 실패"
+            echo "::error::인스턴스 프로파일에 s3:PutObject/s3:DeleteObject 권한이 필요합니다"
+            exit 1
+          fi
+          echo "EC2 인스턴스 프로파일 S3 쓰기 권한 확인 완료"
 
   # ------------------------------------------------------------------
   # 2. 빌드: 프론트엔드 JAR 내장 + 패키징 + S3 업로드
@@ -495,16 +549,28 @@ jobs:
           log "배포 중 감시 통과: 메모리 ${AVAIL_MB}MB, f2r-app·buildit-wiki 정상"
 
           log "== 7. 기동 (Flyway V1→V3 자동 적용) =="
+          # 기동 후 실패 시 AcademyCraft만 정지 (BuildIt·Wiki는 절대 건드리지 않음)
+          # abort()는 exit 1만 수행하며, 이 trap이 academycraft만 정리한다
+          cleanup_academycraft_on_fail() {
+            log "배포 실패 — academycraft 서비스 정지 (BuildIt·Wiki는 유지)"
+            systemctl stop academycraft 2>/dev/null || true
+            systemctl disable academycraft 2>/dev/null || true
+            # f2r-app·buildit-wiki는 건드리지 않는다 (명시적)
+          }
           systemctl enable --now academycraft
           log "academycraft.service 기동 요청"
+          # 기동 이후 실패 시에만 정리 trap 활성화 (기동 전 실패는 정리 불필요)
+          trap cleanup_academycraft_on_fail EXIT
 
           # 기동 후 리소스 재확인
           sleep 10
           AVAIL_AFTER=$(free -m | awk "/^Mem:/{print \$7}")
           log "기동 후 가용 메모리: ${AVAIL_AFTER}MB"
-          systemctl is-active --quiet f2r-app || abort "기동 후 f2r-app 비정상 — 롤백 필요"
-          systemctl is-active --quiet buildit-wiki || abort "기동 후 buildit-wiki 비정상 — 롤백 필요"
+          systemctl is-active --quiet f2r-app || abort "기동 후 f2r-app 비정상 — AcademyCraft 정지 후 수동 롤백 필요"
+          systemctl is-active --quiet buildit-wiki || abort "기동 후 buildit-wiki 비정상 — AcademyCraft 정지 후 수동 롤백 필요"
           log "기동 후 감시 통과"
+          # 모든 검증 통과 시 trap 해제 (정상 완료)
+          trap - EXIT
 
           log "== 8. 백업 cron (필수) =="
           cat > /etc/cron.daily/academycraft-backup <<EOF
@@ -542,27 +608,53 @@ jobs:
           log "== 10. 격리 복원 검증 (운영 DB에 복원하지 않음) =="
           # 백업 파일이 실제로 복원 가능한지 격리된 임시 DB에서 검증
           # 운영 academycraft DB에는 절대 복원하지 않는다
+          # Step 4에서 관리자 비밀번호를 폐기했으므로 여기서 다시 조회 (최소 보관)
+          DB_SECRET_JSON=$(aws secretsmanager get-secret-value \
+            --secret-id "$DB_ADMIN_SECRET_ID" \
+            --query SecretString --output text) \
+            || abort "Secrets Manager 조회 실패 (복원 검증)"
+          RESTORE_DB_HOST=$(printf '%s' "$DB_SECRET_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["host"])')
+          RESTORE_DB_USER=$(printf '%s' "$DB_SECRET_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["username"])')
+          RESTORE_DB_PASS=$(printf '%s' "$DB_SECRET_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["password"])')
+          unset DB_SECRET_JSON
           RESTORE_TEST_DB="academycraft_restore_test_$$"
-          MYCNF_RESTORE=$(make_mycnf)
+          MYCNF_RESTORE=$(mktemp)
+          chmod 600 "$MYCNF_RESTORE"
+          cat > "$MYCNF_RESTORE" <<EOF
+          [client]
+          host=$RESTORE_DB_HOST
+          user=$RESTORE_DB_USER
+          password=$RESTORE_DB_PASS
+          connect-timeout=10
+          EOF
+          unset RESTORE_DB_PASS
+          # 실패·timeout·중단 시에도 임시 DB와 자격증명 파일이 정리되도록 trap
+          cleanup_restore() {
+            mysql --defaults-extra-file="$MYCNF_RESTORE" \
+              -e "DROP DATABASE IF EXISTS $RESTORE_TEST_DB;" 2>/dev/null || true
+            [ -f "$MYCNF_RESTORE" ] && shred -u "$MYCNF_RESTORE"
+            unset MYCNF_RESTORE RESTORE_DB_HOST RESTORE_DB_USER RESTORE_TEST_DB
+          }
+          trap cleanup_restore EXIT INT TERM
           # 복원 테스트용 임시 DB 생성 (격리)
           mysql --defaults-extra-file="$MYCNF_RESTORE" \
             -e "CREATE DATABASE $RESTORE_TEST_DB CHARACTER SET utf8mb4;" \
             || abort "복원 테스트 DB 생성 실패"
           # 백업을 임시 DB에 복원
-          zcat "$LATEST_BACKUP" | mysql --defaults-extra-file="$MYCNF_RESTORE" "$RESTORE_TEST_DB" \
-            || { mysql --defaults-extra-file="$MYCNF_RESTORE" -e "DROP DATABASE $RESTORE_TEST_DB;"; abort "백업 복원 테스트 실패"; }
+          if ! zcat "$LATEST_BACKUP" | mysql --defaults-extra-file="$MYCNF_RESTORE" "$RESTORE_TEST_DB"; then
+            abort "백업 복원 테스트 실패"
+          fi
           # 테이블 수 확인 (원본과 일치하는지)
           ORIG_TABLES=$(mysql --defaults-extra-file="$MYCNF_RESTORE" academycraft -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='academycraft';")
           RESTORED_TABLES=$(mysql --defaults-extra-file="$MYCNF_RESTORE" "$RESTORE_TEST_DB" -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$RESTORE_TEST_DB';")
           if [ "$ORIG_TABLES" != "$RESTORED_TABLES" ]; then
-            mysql --defaults-extra-file="$MYCNF_RESTORE" -e "DROP DATABASE $RESTORE_TEST_DB;"
             abort "복원 검증 실패: 원본 테이블 수($ORIG_TABLES) != 복원 테이블 수($RESTORED_TABLES)"
           fi
           log "복원 검증 통과: $RESTORED_TABLES개 테이블"
-          # 테스트 DB 정리
-          mysql --defaults-extra-file="$MYCNF_RESTORE" -e "DROP DATABASE $RESTORE_TEST_DB;"
-          shred -u "$MYCNF_RESTORE"
-          log "격리 복원 검증 완료 (테스트 DB 삭제됨)"
+          # 정상 완료 시 정리 (trap 해제 후 명시적 정리)
+          trap - EXIT INT TERM
+          cleanup_restore
+          log "격리 복원 검증 완료 (테스트 DB·자격증명 삭제됨)"
 
           log "DEPLOY SCRIPT OK"
           SCRIPT_EOF
