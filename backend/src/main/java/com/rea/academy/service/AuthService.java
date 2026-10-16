@@ -3,6 +3,10 @@ package com.rea.academy.service;
 import com.rea.academy.domain.member.ReaMember;
 import com.rea.academy.domain.member.ReaMemberRepository;
 import com.rea.academy.domain.member.ReaRole;
+import com.rea.academy.domain.notification.delivery.DeliveryResult;
+import com.rea.academy.domain.notification.delivery.NotificationProperties;
+import com.rea.academy.domain.notification.delivery.PasswordResetDeliveryService;
+import com.rea.academy.domain.notification.delivery.PasswordResetRateLimiter;
 import com.rea.academy.dto.AuthDto;
 import com.rea.academy.security.AuthContext;
 import com.rea.academy.security.AuthContextHolder;
@@ -39,6 +43,9 @@ public class AuthService {
 
     private final ReaMemberRepository memberRepository;
     private final JwtTokenProvider tokenProvider;
+    private final PasswordResetDeliveryService deliveryService;
+    private final PasswordResetRateLimiter rateLimiter;
+    private final NotificationProperties notificationProps;
 
     @Value("${rea.security.bcrypt-strength:12}")
     private int bcryptStrength;
@@ -146,21 +153,37 @@ public class AuthService {
 
     @Transactional
     public AuthDto.PasswordResetRequestResponse requestPasswordReset(String loginId) {
+        // 요청 제한: 초과해도 계정 존재 여부를 누설하지 않도록 동일 응답 반환
+        boolean allowed = rateLimiter.tryAcquire(loginId);
         Optional<ReaMember> opt = memberRepository.findByLoginIdAndActiveTrue(loginId);
         String token = null;
-        if (opt.isPresent() && opt.get().hasCredentials()) {
+        if (allowed && opt.isPresent() && opt.get().hasCredentials()) {
             ReaMember member = opt.get();
             token = randomToken();
             member.issuePasswordResetToken(token, passwordResetMinutes);
             memberRepository.save(member);
-            // 운영: 여기서 SMS·이메일 발송 연동 (현재 미구현 — 토큰 로그 기록 금지)
-            log.info("[AUTH] 비밀번호 재설정 토큰 발급: memberId={}", member.getId());
+            // 토큰 로그 기록 금지. 발송 실패해도 토큰은 유효하게 유지 (재요청 가능).
+            DeliveryResult result = deliveryService.deliver(
+                    member.getPhone(), null, buildResetUrl(token));
+            log.info("[AUTH] 비밀번호 재설정 토큰 발급: memberId={}, delivery={}:{}",
+                    member.getId(), result.channel(),
+                    result.success() ? "성공" : "실패(" + result.error() + ")");
         }
         // 존재 여부 누설 방지: 항상 동일 응답
         return AuthDto.PasswordResetRequestResponse.builder()
                 .resetToken(exposeResetToken ? token : null)
                 .message("입력한 아이디가 등록되어 있으면 재설정 안내를 발송했습니다.")
                 .build();
+    }
+
+    private String buildResetUrl(String token) {
+        String base = notificationProps.getResetBaseUrl();
+        if (base == null || base.isBlank()) {
+            base = "";
+        } else if (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        return base + "/screens/AUTH-02-password-reset.html?token=" + token;
     }
 
     @Transactional
