@@ -36,9 +36,9 @@ jobs:
       - name: Build and test
         run: mvn -B test
 
-      - name: Test summary
-    if: always()
-    run: |
-      echo "=== surefire 결과 ==="
-      find . -path '*/surefire-reports/TEST-*.xml' \
-        -print | head -30
+     - name: Test summary
+  if: always()
+  run: |
+    echo "=== surefire 결과 ==="
+    find . -path '*/surefire-reports/TEST-*.xml' \
+      -print | head -30
