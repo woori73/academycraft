@@ -1,6 +1,8 @@
 package com.rea.academy.domain.notification;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import lombok.*;
 
 import java.time.LocalDateTime;
@@ -42,11 +44,13 @@ public class ReaNotification {
 
     /** 발송 채널 */
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(nullable = false, length = 20)
     private NotificationChannel channel;
 
     /** 알림 종류 */
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(nullable = false, length = 20)
     private NotificationType type;
 
@@ -60,6 +64,7 @@ public class ReaNotification {
 
     /** 발송 상태 */
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(nullable = false, length = 20)
     private NotificationStatus status;
 

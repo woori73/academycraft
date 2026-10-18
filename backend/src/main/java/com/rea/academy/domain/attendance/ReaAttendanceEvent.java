@@ -1,6 +1,8 @@
 package com.rea.academy.domain.attendance;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import lombok.*;
 
 import java.time.LocalDateTime;
@@ -37,6 +39,7 @@ public class ReaAttendanceEvent {
 
     /** 출결 구분 */
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(nullable = false, length = 20)
     private AttendanceEventType eventType;
 
@@ -46,6 +49,7 @@ public class ReaAttendanceEvent {
 
     /** 기록 경로 (KEYPAD / MANUAL) */
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(nullable = false, length = 20)
     private AttendanceSource source;
 

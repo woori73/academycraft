@@ -1,0 +1,61 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AcademyOnNewHostOnly",
+      "Effect": "Allow",
+      "Action": "ssm:SendCommand",
+      "Resource": [
+        "arn:aws:ec2:ap-northeast-2:425805163960:instance/i-0414de33d2803c723",
+        "arn:aws:ssm:ap-northeast-2::document/AWS-RunShellScript"
+      ]
+    },
+    {
+      "Sid": "ReadOwnCommandResults",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:GetCommandInvocation",
+        "ec2:DescribeInstances"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ReadWriteAcademyArtifactsAndBackups",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::f2r-deploy-425805163960/academycraft/*",
+        "arn:aws:s3:::f2r-deploy-425805163960/backups/academycraft/*"
+      ]
+    },
+    {
+      "Sid": "RemoveOnlyWriteTestObjects",
+      "Effect": "Allow",
+      "Action": "s3:DeleteObject",
+      "Resource": "arn:aws:s3:::f2r-deploy-425805163960/backups/academycraft/.write-test-*"
+    },
+    {
+      "Sid": "ListOnlyAcademyPrefixes",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::f2r-deploy-425805163960",
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": [
+            "academycraft/*",
+            "backups/academycraft/*"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "VerifyDbBelongsToNewAccount",
+      "Effect": "Allow",
+      "Action": "rds:DescribeDBInstances",
+      "Resource": "*"
+    }
+  ]
+}

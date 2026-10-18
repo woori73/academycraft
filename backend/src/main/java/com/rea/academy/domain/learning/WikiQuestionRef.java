@@ -26,7 +26,7 @@ public class WikiQuestionRef {
     private Long questionId;
 
     /** 문항 출처 (예: NAESIN_WIKI). 외부 시스템 구분용. */
-    @Column(name = "question_source", length = 50)
+    @Column(name = "source", length = 255)
     private String source;
 
     @Override

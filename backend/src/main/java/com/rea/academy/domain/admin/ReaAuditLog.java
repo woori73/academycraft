@@ -1,6 +1,8 @@
 package com.rea.academy.domain.admin;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import lombok.*;
 
 import java.time.LocalDateTime;
@@ -31,6 +33,7 @@ public class ReaAuditLog {
 
     /** 행위 종류 */
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(nullable = false, length = 40)
     private AuditActionType actionType;
 

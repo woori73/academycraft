@@ -1,6 +1,8 @@
 package com.rea.academy.domain.attendance;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import lombok.*;
 
 import java.time.LocalDateTime;
@@ -34,11 +36,13 @@ public class ReaAttendanceCorrection {
 
     /** 정정 전 구분 */
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(nullable = false, length = 20)
     private AttendanceEventType beforeType;
 
     /** 정정 후 구분 */
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(nullable = false, length = 20)
     private AttendanceEventType afterType;
 

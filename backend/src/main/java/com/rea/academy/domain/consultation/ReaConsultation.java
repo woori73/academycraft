@@ -1,6 +1,8 @@
 package com.rea.academy.domain.consultation;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import lombok.*;
 
 import java.time.LocalDateTime;
@@ -39,11 +41,13 @@ public class ReaConsultation {
 
     /** 상담 종류: INQUIRY(문의) / NEWS(아이소식) */
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(nullable = false, length = 20)
     private ConsultationType type;
 
     /** 상담 상태: OPEN(진행중) / ANSWERED(답변완료) / CLOSED(종료) */
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(nullable = false, length = 20)
     @Builder.Default
     private ConsultationStatus status = ConsultationStatus.OPEN;

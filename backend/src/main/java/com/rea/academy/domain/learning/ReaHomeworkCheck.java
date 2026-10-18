@@ -1,6 +1,8 @@
 package com.rea.academy.domain.learning;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import lombok.*;
 
 import java.time.LocalDateTime;
@@ -44,6 +46,7 @@ public class ReaHomeworkCheck {
 
     /** 검사 결과: 완료 / 미완료 */
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(nullable = false, length = 20)
     private HomeworkCheckStatus status;
 

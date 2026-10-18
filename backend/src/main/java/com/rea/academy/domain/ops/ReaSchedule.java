@@ -1,6 +1,8 @@
 package com.rea.academy.domain.ops;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import lombok.*;
 
 import java.time.LocalDate;
@@ -48,6 +50,7 @@ public class ReaSchedule {
 
     /** 대상 구분: ALL(학원 전체) / CLASS(반별) */
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(nullable = false, length = 20)
     @Builder.Default
     private ScheduleTargetType targetType = ScheduleTargetType.ALL;
