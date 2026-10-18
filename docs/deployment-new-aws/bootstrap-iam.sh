@@ -32,6 +32,11 @@ if role and role['Role']['AssumeRolePolicyDocument']!=trust:
     raise SystemExit('Existing AcademyCraft trust differs; stopped without overwriting')
 if role and role['Role']['Arn']!='arn:aws:iam::'+ACCOUNT+':role/'+ROLE:
     raise SystemExit('Unexpected role ARN')
+if role:
+    attached=aws('iam','list-attached-role-policies','--role-name',ROLE)['AttachedPolicies']
+    names=aws('iam','list-role-policies','--role-name',ROLE)['PolicyNames']
+    if attached or set(names)-{'academycraft-new-host-only'}:
+        raise SystemExit('Unexpected AcademyCraft policies; stopped without modification')
 aws('iam','get-role','--role-name','f2r-ec2-ssm-role')
 aws('iam','get-open-id-connect-provider','--open-id-connect-provider-arn',
     'arn:aws:iam::'+ACCOUNT+':oidc-provider/token.actions.githubusercontent.com')

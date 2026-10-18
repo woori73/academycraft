@@ -37,7 +37,8 @@ aws sts get-caller-identity --query Account --output text
 bash docs/deployment-new-aws/bootstrap-iam.sh
 ```
 
-필요 작업: iam:GetRole/GetRolePolicy, iam:GetOpenIDConnectProvider(기존 GitHub provider만),
+동시 관리자 작업 없이 한 명이 실행한다.
+필요 작업: iam:GetRole/GetRolePolicy/ListRolePolicies/ListAttachedRolePolicies, iam:GetOpenIDConnectProvider(기존 GitHub provider만),
 iam:CreateRole/TagRole/PutRolePolicy(AcademyCraft 역할),
 iam:PutRolePolicy(f2r-ec2-ssm-role의 새 backup 정책 추가).
 공유 EC2 역할에 PutRolePolicy 권한을 위임하면 다른 정책도 쓸 수 있는 위험이 있으므로
