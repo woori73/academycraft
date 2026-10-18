@@ -1,6 +1,8 @@
 package com.rea.academy.domain.member;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import lombok.*;
 import java.time.LocalDateTime;
 
@@ -30,6 +32,7 @@ public class ReaMember {
 
     /** 역할: 원장/강사/학부모 */
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
     @Column(nullable = false, length = 20)
     private ReaRole role;
 
