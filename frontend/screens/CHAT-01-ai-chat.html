@@ -128,9 +128,10 @@
     .auth-bar { row-gap: 8px; }
     #authKey { flex: 1; min-width: 0; width: auto; }  }
 </style>
+<script defer src="../components/home-navigation.js"></script>
 </head>
 <body>
-<nav aria-label="Feel2Real 홈" style="position:relative;z-index:1;margin:8px 0;"><a href="https://feel2real.co.kr/" style="display:inline-flex;align-items:center;min-height:44px;padding:0 12px;color:#0066cc;white-space:nowrap;">홈으로</a></nav>
+<nav aria-label="Feel2Real 홈" style="position:relative;z-index:1;margin:8px 0;"><a data-feel2real-home href="https://feel2real.co.kr/" style="display:inline-flex;align-items:center;min-height:44px;padding:0 12px;color:#0066cc;white-space:nowrap;">홈으로</a></nav>
 
 <div class="header">
   <div>
@@ -138,13 +139,7 @@
     <div class="sub">AcademyCraft · 자연어 명령으로 Agent 실행</div>
   </div>
   <span class="role">원장 · 강사 전용 (학부모 접근 불가)</span>
-  <div class="auth-bar">
-    <label>학원ID <input type="number" id="academyId" value="1" min="1"
-      style="width:56px;padding:8px;" title="URL 경로의 {academyId}"></label>
-    <input type="password" id="authKey" placeholder="X-Auth-Key 인증키 입력"
-      autocomplete="off">
-    <button class="btn btn-sm btn-ghost" onclick="saveAuthKey()">저장</button>
-  </div>
+
 </div>
 
 <details class="tools-toggle">
@@ -164,29 +159,19 @@
   <button class="btn" id="sendBtn" onclick="sendCmd()">전송</button>
 </div>
 
+<script src="../components/auth.js"></script>
+<script src="../components/api-client.js"></script>
 <script>
 'use strict';
 
 /* ---------- 설정 ---------- */
-const API_BASE = '/api/rea';  // + '/' + academyId
-const LS_KEY = 'rea_auth_key';
-const LS_ACADEMY = 'rea-chat-academy-id';
+// 업무 API는 공통 JWT 클라이언트를 사용한다.
 
 /* ---------- 대화 컨텍스트 (페이지 세션 메모리, 리로드 시 초기화) ---------- */
 const MAX_TURNS = 20;
 const turns = [];              // [{command, toolUsed, ok}]
 let lastIds = {};              // 최근 성공 결과의 주요 ID: {studentId, studentName, classId, className, noticeId, homeworkId, authKey}
 let pendingCmd = null;          // requiresApproval 대기 중인 명령
-
-function apiUrl() {
-  return API_BASE + '/' + (document.getElementById('academyId').value || 1);
-}
-function authKey() {
-  return document.getElementById('authKey').value.trim();
-}
-function authHeaders() {
-  return { 'Content-Type': 'application/json', 'X-Auth-Key': authKey() };
-}
 
 /* 지시어(아까/그/저/방금) 감지 시 최근 성공 결과의 ID를 명령에 주입.
    CommandParser는 "학생 12" / "2반" 같은 숫자 패턴을 인식한다. */
@@ -528,12 +513,6 @@ async function sendCmd() {
   let cmd = input.value.trim();
   if (!cmd) return;
 
-  if (!authKey()) {
-    addAgentBubble(`<div class="err">🔑 먼저 상단의 <b>X-Auth-Key 인증키</b>를 입력하고 저장해 주세요.
-      (1단계 인증이 없으면 401 오류가 발생합니다.)</div>`);
-    document.getElementById('authKey').focus();
-    return;
-  }
 
   pendingCmd = null;
   const resolved = resolveContext(cmd);
@@ -546,22 +525,17 @@ async function sendCmd() {
   showTyping();
 
   try {
-    const res = await fetch(`${apiUrl()}/agent/execute`, {
-      method: 'POST',
-      headers: authHeaders(),
-      body: JSON.stringify({ command: resolved, writeApproved }),
-    });
+    const res = await apiPost('/@academy/agent/execute', { command: resolved, writeApproved });
     let data = null;
     try { data = await res.json(); } catch (e) { /* 비JSON 응답 */ }
 
     hideTyping();
     if (res.status === 401) {
-      addAgentBubble(`<div class="err">🔑 401 인증 실패: 인증키가 올바르지 않습니다.
-        상단의 인증키를 다시 확인하고 저장해 주세요.</div>`);
+      addAgentBubble(`<div class="err">로그인이 만료되었습니다. 다시 로그인해 주세요.</div>`);
     } else if (res.status === 403) {
       addAgentBubble(`<div class="err">⛔ 403 접근 거부: 학부모 계정은 Agent를 사용할 수 없고,
         인증된 학원(academyId)과 다른 학원 번호는 접근할 수 없습니다.
-        원장·강사 인증키로 다시 시도하세요.</div>`);
+        원장·강사 계정으로 다시 로그인해 주세요.</div>`);
     } else if (!res.ok || !data) {
       addAgentBubble(`<div class="err">서버 오류 (HTTP ${res.status}).
         잠시 후 다시 시도하거나, 관리자에게 문의하세요.</div>`);
@@ -591,26 +565,7 @@ function cancelPending() {
   addAgentBubble('<div>승인 요청이 취소되었습니다.</div>');
 }
 
-/* ---------- 인증키 저장 ---------- */
-function saveAuthKey() {
-  const k = document.getElementById('authKey').value.trim();
-  const a = document.getElementById('academyId').value || '1';
-  if (!k) { alert('인증키를 입력해 주세요.'); return; }
-  try {
-    localStorage.setItem(LS_KEY, k);
-    localStorage.setItem(LS_ACADEMY, a);
-  } catch (e) { /* private mode 등 */ }
-  addAgentBubble(`<div>🔑 인증키가 저장되었습니다 (학원ID ${escapeHtml(a)}).
-    이제 자연어 명령을 입력해 보세요.</div>`);
-}
-
 (function init() {
-  try {
-    const k = localStorage.getItem(LS_KEY);
-    const a = localStorage.getItem(LS_ACADEMY);
-    if (k) document.getElementById('authKey').value = k;
-    if (a) document.getElementById('academyId').value = a;
-  } catch (e) { /* 무시 */ }
   renderToolsPanel();
   addAgentBubble(`<div>안녕하세요, <b>AI 학원 비서</b>입니다. 👋</div>
     <div style="font-size:13px;margin-top:6px;">
