@@ -88,3 +88,30 @@ production의 main 제한·필수 승인 유지 → backup prefix 쓰기 검증 
 ALB/연결 수를 실제 확인하기 전 CHECKED를 입력하지 않는다.
 백업 및 격리 복원 성공 → 원장 자격 설정 → HTTPS 로그인 → 학생/반/출결·강사/학원 격리 검증
 → 성공한 실제 URL에만 BuildIt 카드 연결. 학부모 알림 Mock 유지.
+
+## 부트스트랩 후 HTTPS 설정 1회 실행
+
+2026-10-19 08:49 KST 읽기 전용 run 39178062429:
+AcademyCraft 역할과 지정 main workflow 신뢰 확인, 기존 ALB는 default rule만 존재.
+BuildIt inspect run 39178093763에서 실제 trust가 기준과 일치하고 기존 정책 이름 2개·managed policy 없음 확인.
+RAM 가용 2049MB, 기존 서비스 active, DB 연결13/60, AcademyCraft env/JAR/schema 아직 없음.
+
+관리자 신규 계정 CloudShell의 검토 SHA checkout에서:
+
+```bash
+python3 docs/deployment-new-aws/bootstrap-routing.py
+```
+
+필요 권한은 기존 ALB/리스너/규칙/TG·ACM 인증서·EC2/SG의 Describe,
+전용 TG의 CreateTargetGroup/RegisterTargets, 기존443의 CreateRule,
+앱 SG의 ALB-source TCP8082 AuthorizeSecurityGroupIngress이다. 기존 IAM 권한 확대 없음.
+스크립트는 모든 조회와 인증서/DNS/SG 검사를 마친 뒤에만 쓰기 시작한다.
+DNS 미설정/다른 목적지, SAN 불일치, 기존8082 외부 노출이면 쓰기 없이 중단한다.
+이 경우 출력한 차단 사유와 ALB DNS(비밀 아님)를 확인하고 필요한 관리자 작업만 별도 수행한다.
+DNS·인증서 발급은 이 스크립트에서 변경하지 않는다. 신규 ALB·EC2 생성 API 없음.
+
+rollback evidence는 관리자 현재 디렉터리의 academycraft-routing-before.json(600)에 남는다.
+실패 후 이 파일을 지우고 자동 재시도하지 않는다. 신규 rule ID/SG rule ID/TG ARN만 대상으로
+delete-rule → revoke-security-group-ingress → deregister-targets → delete-target-group 순으로
+관리자가 검토해 되돌린다. 기존 default rule/기존 SG rule/인증서/DB는 변경·삭제하지 않는다.
+기존 TG를 재사용한 경우 그 TG는 삭제하지 않는다. targets 등록은 위 EC2:8082만 허용한다.
