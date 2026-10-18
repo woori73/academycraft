@@ -13,7 +13,8 @@
           "token.actions.githubusercontent.com:sub": [
             "repo:woori73@299170593/academycraft@1421088210:environment:production",
             "repo:woori73/academycraft:environment:production"
-          ]
+          ],
+          "token.actions.githubusercontent.com:job_workflow_ref": "woori73/academycraft/.github/workflows/deploy-academycraft.yml@refs/heads/main"
         }
       }
     }
