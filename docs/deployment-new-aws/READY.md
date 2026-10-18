@@ -49,6 +49,10 @@ Work의 AWS 콘솔 접근은 Site Unavailable로 차단되어 콘솔 작업을 �
 실제 원장 로그인 → 학생 등록/조회/수정 → 반 생성/배정 → 출결 입력/정정/월별/반별 조회 → 강사/학원 격리.
 실제 HTTPS URL 확인 후 BuildIt 바로가기 반영. 출결 위젯·SSO는 별도 권한 매핑 검토.
 
+## 격리 MySQL 운영 기동 검사
+
+MySQL 8.4 CI에서 발견한 기존 매핑 불일치를 수정한다. enum은 기존 VARCHAR로 명시하고, 출결 엔티티에 이미 있는 updatedAt의 누락 컬럼은 V4로 추가한다. V1~V3 체크섬은 보존한다. AWS 운영 DB에는 아직 적용하지 않았다.
+
 ## 비용
 
 이번 작업으로 AWS 유료 리소스 생성·증설 없음. 새 EC2·RDS·ALB·Secrets Manager를 만들지 않는 구성이다.

@@ -8,6 +8,7 @@ on:
       - 'backend/src/main/resources/application-prod.properties'
       - 'backend/src/main/resources/db/migration/**'
       - 'pom.xml'
+      - 'backend/src/main/java/**'
 permissions:
   contents: read
 jobs:
@@ -36,7 +37,7 @@ jobs:
           cache: maven
       - name: Package existing app (previous unit tests are not repeated here)
         run: mvn -B package -DskipTests
-      - name: Production profile boot, Flyway V1-V3 and auth fallback check
+      - name: Production profile boot, Flyway V1-V4 and auth fallback check
         shell: bash
         env:
           DB_URL: jdbc:mysql://127.0.0.1:3306/academycraft_ci?serverTimezone=Asia/Seoul&useSSL=false&allowPublicKeyRetrieval=true
@@ -56,7 +57,7 @@ jobs:
           done
           curl -fsS --max-time 5 http://127.0.0.1:8082/actuator/health | python3 -c 'import json,sys; assert json.load(sys.stdin)["status"]=="UP"'
           HISTORY=$(mysql -h127.0.0.1 -uacademycraft_ci academycraft_ci -N -e "SELECT GROUP_CONCAT(CONCAT(version, ':', success) ORDER BY installed_rank) FROM flyway_schema_history")
-          [ "$HISTORY" = "1:1,2:1,3:1" ] || { echo "Unexpected Flyway history: $HISTORY"; exit 1; }
+          [ "$HISTORY" = "1:1,2:1,3:1,4:1" ] || { echo "Unexpected Flyway history: $HISTORY"; exit 1; }
           STATUS=$(curl -s -o /dev/null -w '%{http_code}' -H 'X-Auth-Key: ci-invalid-key' http://127.0.0.1:8082/api/rea/1/students)
           [ "$STATUS" = 401 ] || { echo "Production auth fallback is not closed: $STATUS"; exit 1; }
-          echo "PASS: prod boot + ddl validation + V1-V3 + X-Auth-Key 401"
+          echo "PASS: prod boot + ddl validation + V1-V4 + X-Auth-Key 401"
