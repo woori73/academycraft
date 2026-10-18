@@ -59,8 +59,10 @@
     input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-width: 0; flex: none; accent-color: #0066cc; }
   }
 </style>
+<script defer src="../components/home-navigation.js"></script>
 </head>
 <body>
+<nav aria-label="Feel2Real 홈" style="position:relative;z-index:1;margin:8px 0;"><a data-feel2real-home href="https://feel2real.co.kr/" style="display:inline-flex;align-items:center;min-height:44px;padding:0 12px;color:#0066cc;white-space:nowrap;">홈으로</a></nav>
 <div class="header">
   <h1>일정·캘린더</h1>
   <p style="color:#666;font-size:13px;margin-top:4px;">REA 7단계 구현 - OPS-01 · 학원/반별 일정 + 상담 일정 연결</p>
@@ -136,9 +138,10 @@
   </div>
 </div>
 
+<script src="../components/auth.js"></script>
 <script src="../components/api-client.js"></script>
 <script>
-var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+var REA_API_BASE = '/api/rea'; // 학원 경로는 로그인 JWT에서 결정
 let schedules = [];
 let selectedDate = null;
 
@@ -159,7 +162,7 @@ async function init() {
 
 async function loadClasses() {
   try {
-    const res = await apiGet(`/1/classes`);
+    const res = await apiGet(`/@academy/classes`);
     if (!res.ok) return;
     const list = await res.json();
     const sel = document.getElementById('f-class');
@@ -173,7 +176,7 @@ async function loadClasses() {
 
 async function loadConsultations() {
   try {
-    const res = await apiGet(`/1/consultations`);
+    const res = await apiGet(`/@academy/consultations`);
     if (!res.ok) return;
     const list = await res.json();
     const sel = document.getElementById('f-consult');
@@ -190,7 +193,7 @@ async function loadMonth() {
   const ym = document.getElementById('ym').value;
   if (!ym) { showMsg('월을 선택하세요.', false); return; }
   try {
-    const res = await apiGet(`/1/schedules?yearMonth=${ym}`);
+    const res = await apiGet(`/@academy/schedules?yearMonth=${ym}`);
     if (!res.ok) throw new Error('조회 실패');
     schedules = await res.json();
     renderCalendar(ym);
@@ -322,8 +325,8 @@ async function saveSchedule() {
   };
   try {
     const res = id
-      ? await apiPut(`/1/schedules/${id}`, body)
-      : await apiPost(`/1/schedules`, body);
+      ? await apiPut(`/@academy/schedules/${id}`, body)
+      : await apiPost(`/@academy/schedules`, body);
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.message || '저장 실패');
@@ -339,7 +342,7 @@ async function saveSchedule() {
 async function deleteSchedule(id, title) {
   if (!confirm(`'${title}' 일정을 삭제할까요?`)) return;
   try {
-    const res = await apiDelete(`/1/schedules/${id}`);
+    const res = await apiDelete(`/@academy/schedules/${id}`);
     if (!res.ok) throw new Error('삭제 실패');
     showMsg('일정이 삭제되었습니다.', true);
     resetForm();

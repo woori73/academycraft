@@ -41,8 +41,10 @@
     input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-width: 0; flex: none; accent-color: #0066cc; }
   }
 </style>
+<script defer src="../components/home-navigation.js"></script>
 </head>
 <body>
+<nav aria-label="Feel2Real 홈" style="position:relative;z-index:1;margin:8px 0;"><a data-feel2real-home href="https://feel2real.co.kr/" style="display:inline-flex;align-items:center;min-height:44px;padding:0 12px;color:#0066cc;white-space:nowrap;">홈으로</a></nav>
 <div class="header">
   <h1>숙제 안내</h1>
   <p style="color:#666;font-size:13px;margin-top:4px;">REA 6단계 구현 - HW-03 · 학부모 · 자녀 숙제 목록·검사 상태</p>
@@ -66,9 +68,10 @@
 
 <div class="card" id="list"><div class="empty">자녀를 선택하세요.</div></div>
 
+<script src="../components/auth.js"></script>
 <script src="../components/api-client.js"></script>
 <script>
-var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+var REA_API_BASE = '/api/rea'; // 학원 경로는 로그인 JWT에서 결정
 
 function showMsg(text) {
   const m = document.getElementById('msg');
@@ -78,7 +81,7 @@ function showMsg(text) {
 
 async function loadStudents() {
   try {
-    const res = await apiGet(`/1/students`);
+    const res = await apiGet(`/@academy/students`);
     const data = await res.json();
     if (!res.ok) return;
     const sel = document.getElementById('f-student');
@@ -96,7 +99,7 @@ async function loadHomework() {
   const list = document.getElementById('list');
   if (!studentId) { list.innerHTML = '<div class="empty">자녀를 선택하세요.</div>'; return; }
   try {
-    const res = await apiGet(`/1/homework?studentId=${studentId}`);
+    const res = await apiGet(`/@academy/homework?studentId=${studentId}`);
     const data = await res.json();
     if (!res.ok) { showMsg(data.message || '조회 실패'); return; }
     if (data.length === 0) {

@@ -32,8 +32,10 @@
     .search input { flex: 1 1 100%; }
     .search button { flex: 1; white-space: nowrap; }  }
 </style>
+<script defer src="../components/home-navigation.js"></script>
 </head>
 <body>
+<nav aria-label="Feel2Real 홈" style="position:relative;z-index:1;margin:8px 0;"><a data-feel2real-home href="https://feel2real.co.kr/" style="display:inline-flex;align-items:center;min-height:44px;padding:0 12px;color:#0066cc;white-space:nowrap;">홈으로</a></nav>
 <div class="header">
   <h1>학생 관리</h1>
   <p style="color:#666;font-size:13px;margin-top:4px;">REA 1차 구현 - MBR-01</p>
@@ -56,10 +58,11 @@
 
 <div id="list"></div>
 
+<script src="../components/auth.js"></script>
 <script src="../components/api-client.js"></script>
 <script>
-var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
-const academyId = 1;
+var REA_API_BASE = '/api/rea'; // 학원 경로는 로그인 JWT에서 결정
+// 학원 경로는 JWT의 academyId로 공통 클라이언트에서 결정한다.
 
 function toggleForm() {
   const f = document.getElementById('add-form');
@@ -68,7 +71,7 @@ function toggleForm() {
 
 async function loadStudents() {
   const kw = document.getElementById('search').value;
-  const url = `/1/students${kw ? '?name=' + encodeURIComponent(kw) : ''}`;
+  const url = `/@academy/students${kw ? '?name=' + encodeURIComponent(kw) : ''}`;
   const res = await apiGet(url);
   const students = await res.json();
   const list = document.getElementById('list');
@@ -91,7 +94,7 @@ async function createStudent() {
     parentPhone: document.getElementById('f-phone').value
   };
   if (!body.name) { alert('학생 이름을 입력하세요.'); return; }
-  const res = await apiPost(`/1/students`, body);
+  const res = await apiPost(`/@academy/students`, body);
   const saved = await res.json();
   alert(`등록 완료. 인증키: ${saved.authKey}\n학부모에게 공유하세요.`);
   toggleForm();
@@ -99,7 +102,7 @@ async function createStudent() {
 }
 
 async function showDetail(id) {
-  const res = await apiGet(`/1/students/${id}`);
+  const res = await apiGet(`/@academy/students/${id}`);
   const s = await res.json();
   const name = prompt("이름", s.name);
   if (name === null) return;
@@ -112,11 +115,7 @@ async function showDetail(id) {
   const parentPhone = prompt("학부모 연락처", s.parentPhone || "");
   if (parentPhone === null) return;
 
-  const putRes = await fetch(`${API_BASE}/1/students/${id}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json", "X-Auth-Key": getAuthKey() },
-    body: JSON.stringify({ name, grade, schoolName, parentName, parentPhone })
-  });
+  const putRes = await apiPut(`/@academy/students/${id}`, { name, grade, schoolName, parentName, parentPhone });
   if (putRes.ok) {
     alert("수정 완료");
     loadStudents();

@@ -49,8 +49,10 @@
     select, textarea { min-height: 44px; font-size: 16px; }
   }
 </style>
+<script defer src="../components/home-navigation.js"></script>
 </head>
 <body>
+<nav aria-label="Feel2Real 홈" style="position:relative;z-index:1;margin:8px 0;"><a data-feel2real-home href="https://feel2real.co.kr/" style="display:inline-flex;align-items:center;min-height:44px;padding:0 12px;color:#0066cc;white-space:nowrap;">홈으로</a></nav>
 <div class="header">
   <h1>사용자·권한 관리</h1>
   <p style="color:#666;font-size:13px;margin-top:4px;">REA 8단계 구현 - ADM-02 · 원장·강사·학부모 역할 관리</p>
@@ -114,6 +116,7 @@
   <button class="btn" onclick="changeRole()">권한 변경</button>
 </div>
 
+<script src="../components/auth.js"></script>
 <script src="../components/api-client.js"></script>
 <script>
 let currentRole = '';

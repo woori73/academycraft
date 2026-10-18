@@ -30,8 +30,10 @@
     input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-width: 0; flex: none; accent-color: #0066cc; }
   }
 </style>
+<script defer src="../components/home-navigation.js"></script>
 </head>
 <body>
+<nav aria-label="Feel2Real 홈" style="position:relative;z-index:1;margin:8px 0;"><a data-feel2real-home href="https://feel2real.co.kr/" style="display:inline-flex;align-items:center;min-height:44px;padding:0 12px;color:#0066cc;white-space:nowrap;">홈으로</a></nav>
 <div class="header">
   <h1>문의 작성</h1>
   <p style="color:#666;font-size:13px;margin-top:4px;">REA 5단계 구현 - CNS-02 · 선생님께 1:1 문의 보내기</p>
@@ -49,9 +51,10 @@
   <button class="btn" onclick="submitInquiry()">전송</button>
 </div>
 
+<script src="../components/auth.js"></script>
 <script src="../components/api-client.js"></script>
 <script>
-var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+var REA_API_BASE = '/api/rea'; // 학원 경로는 로그인 JWT에서 결정
 
 function showMsg(text, ok) {
   const m = document.getElementById('msg');
@@ -67,7 +70,7 @@ async function submitInquiry() {
   if (!title) { showMsg('제목을 입력하세요.', false); return; }
   if (!content) { showMsg('내용을 입력하세요.', false); return; }
   // 학생 인증키는 X-Auth-Key 헤더로 전송. body 의 authKey 는 백엔드 식별용으로 유지.
-  const res = await apiPost(`/1/consultations`,
+  const res = await apiPost(`/@academy/consultations`,
     { authKey, type: 'INQUIRY', title, content }, authKey);
   const data = await res.json();
   if (!res.ok) { showMsg(data.message || '전송 실패', false); return; }

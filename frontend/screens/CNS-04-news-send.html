@@ -44,8 +44,10 @@
     input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-width: 0; flex: none; accent-color: #0066cc; }
   }
 </style>
+<script defer src="../components/home-navigation.js"></script>
 </head>
 <body>
+<nav aria-label="Feel2Real 홈" style="position:relative;z-index:1;margin:8px 0;"><a data-feel2real-home href="https://feel2real.co.kr/" style="display:inline-flex;align-items:center;min-height:44px;padding:0 12px;color:#0066cc;white-space:nowrap;">홈으로</a></nav>
 <div class="header">
   <h1>아이소식 작성</h1>
   <p style="color:#666;font-size:13px;margin-top:4px;">REA 5단계 구현 - CNS-04 · 특정 학부모에게 1:1 소식 전달 (강사용)</p>
@@ -71,9 +73,10 @@
   </div>
 </div>
 
+<script src="../components/auth.js"></script>
 <script src="../components/api-client.js"></script>
 <script>
-var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+var REA_API_BASE = '/api/rea'; // 학원 경로는 로그인 JWT에서 결정
 let targetStudentId = null;
 let targetStudentName = '';
 
@@ -91,7 +94,7 @@ function memberId() {
 
 async function loadStudents() {
   if (!memberId()) return;
-  const res = await apiGet(`/1/students`);
+  const res = await apiGet(`/@academy/students`);
   const data = await res.json();
   if (!res.ok) { showMsg(data.message || '학생 조회 실패', false); return; }
   const box = document.getElementById('students');
@@ -124,7 +127,7 @@ async function sendNews() {
   const content = document.getElementById('content').value.trim();
   if (!title) { showMsg('제목을 입력하세요.', false); return; }
   if (!content) { showMsg('내용을 입력하세요.', false); return; }
-  const res = await apiPost(`/1/consultations`, {
+  const res = await apiPost(`/@academy/consultations`, {
       studentId: targetStudentId, type: 'NEWS', title, content,
       authorMemberId: Number(mid)
     });

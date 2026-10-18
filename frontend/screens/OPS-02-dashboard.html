@@ -43,8 +43,10 @@
     input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-width: 0; flex: none; accent-color: #0066cc; }
   }
 </style>
+<script defer src="../components/home-navigation.js"></script>
 </head>
 <body>
+<nav aria-label="Feel2Real 홈" style="position:relative;z-index:1;margin:8px 0;"><a data-feel2real-home href="https://feel2real.co.kr/" style="display:inline-flex;align-items:center;min-height:44px;padding:0 12px;color:#0066cc;white-space:nowrap;">홈으로</a></nav>
 <div class="header">
   <h1>통계 대시보드</h1>
   <p style="color:#666;font-size:13px;margin-top:4px;">AcademyCraft · 학원 운영 현황 한눈에 보기</p>
@@ -100,9 +102,10 @@
   </div>
 </div>
 
+<script src="../components/auth.js"></script>
 <script src="../components/api-client.js"></script>
 <script>
-var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+var REA_API_BASE = '/api/rea'; // 학원 경로는 로그인 JWT에서 결정
 
 function showMsg(text, ok) {
   const el = document.getElementById('msg');
@@ -112,7 +115,7 @@ function showMsg(text, ok) {
 
 async function loadStats() {
   try {
-    const res = await apiGet(`/1/dashboard/stats`);
+    const res = await apiGet(`/@academy/dashboard/stats`);
     if (!res.ok) throw new Error('조회 실패');
     const s = await res.json();
 

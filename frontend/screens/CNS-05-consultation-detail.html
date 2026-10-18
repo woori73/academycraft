@@ -55,8 +55,10 @@
 
     .role-pick label { padding: 12px 8px; }  }
 </style>
+<script defer src="../components/home-navigation.js"></script>
 </head>
 <body>
+<nav aria-label="Feel2Real 홈" style="position:relative;z-index:1;margin:8px 0;"><a data-feel2real-home href="https://feel2real.co.kr/" style="display:inline-flex;align-items:center;min-height:44px;padding:0 12px;color:#0066cc;white-space:nowrap;">홈으로</a></nav>
 <div class="header">
   <h1>대화 상세</h1>
   <p style="color:#666;font-size:13px;margin-top:4px;">REA 5단계 구현 - CNS-05 · 1:1 상담 스레드</p>
@@ -91,9 +93,10 @@
   </div>
 </div>
 
+<script src="../components/auth.js"></script>
 <script src="../components/api-client.js"></script>
 <script>
-var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+var REA_API_BASE = '/api/rea'; // 학원 경로는 로그인 JWT에서 결정
 let threadId = null;
 let viewer = null; // {kind:'parent'|'staff', key:...}
 
@@ -146,7 +149,7 @@ function viewerHeaderKey() {
 async function refresh() {
   const q = viewerParams();
   // 학생 인증키는 URL 파라미터에 포함하지 않고 X-Auth-Key 헤더로만 전송
-  const res = await apiGet(`/1/consultations/${threadId}`, q.authKey || undefined);
+  const res = await apiGet(`/@academy/consultations/${threadId}`, q.authKey || undefined);
   const c = await res.json();
   if (!res.ok) { showMsg(c.message || '조회 실패', false); return; }
   document.getElementById('thread').style.display = 'block';
@@ -183,7 +186,7 @@ async function refresh() {
 async function sendMessage() {
   const content = document.getElementById('reply-text').value.trim();
   if (!content) { showMsg('메시지를 입력하세요.', false); return; }
-  const res = await apiPost(`/1/consultations/${threadId}/messages`,
+  const res = await apiPost(`/@academy/consultations/${threadId}/messages`,
     Object.assign({ content }, viewerBody()), viewerHeaderKey());
   const data = await res.json();
   if (!res.ok) { showMsg(data.message || '전송 실패', false); return; }
@@ -198,7 +201,7 @@ async function sendMessage() {
 }
 
 async function markRead(messageId) {
-  const res = await apiPost(`/1/consultations/${threadId}/messages/${messageId}/read`,
+  const res = await apiPost(`/@academy/consultations/${threadId}/messages/${messageId}/read`,
     viewerBody(), viewerHeaderKey());
   const data = await res.json();
   if (!res.ok) { showMsg(data.message || '읽음 처리 실패', false); return; }
@@ -207,7 +210,7 @@ async function markRead(messageId) {
 
 async function closeThread() {
   if (!confirm('상담을 종료하시겠습니까? 종료 후에는 메시지를 작성할 수 없습니다.')) return;
-  const res = await apiPost(`/1/consultations/${threadId}/close`,
+  const res = await apiPost(`/@academy/consultations/${threadId}/close`,
     viewerBody(), viewerHeaderKey());
   const data = await res.json();
   if (!res.ok) { showMsg(data.message || '종료 실패', false); return; }

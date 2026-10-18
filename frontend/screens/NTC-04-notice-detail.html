@@ -46,8 +46,10 @@
     input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-width: 0; flex: none; accent-color: #0066cc; }
   }
 </style>
+<script defer src="../components/home-navigation.js"></script>
 </head>
 <body>
+<nav aria-label="Feel2Real 홈" style="position:relative;z-index:1;margin:8px 0;"><a data-feel2real-home href="https://feel2real.co.kr/" style="display:inline-flex;align-items:center;min-height:44px;padding:0 12px;color:#0066cc;white-space:nowrap;">홈으로</a></nav>
 <div class="header">
   <h1>공지 상세</h1>
   <p style="color:#666;font-size:13px;margin-top:4px;">REA 4단계 구현 - NTC-04 · 조회수(관리자만) · 읽음 확인</p>
@@ -75,9 +77,10 @@
   <div id="readers"></div>
 </div>
 
+<script src="../components/auth.js"></script>
 <script src="../components/api-client.js"></script>
 <script>
-var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+var REA_API_BASE = '/api/rea'; // 학원 경로는 로그인 JWT에서 결정
 const params = new URLSearchParams(location.search);
 const noticeId = params.get('id');
 const urlAuthKey = params.get('authKey') || '';
@@ -108,7 +111,7 @@ async function loadDetail() {
   const ak = urlAuthKey || document.getElementById('authkey').value.trim();
   // 학생 인증키는 URL 파라미터에 포함하지 않고 X-Auth-Key 헤더로만 전송
   try {
-    const res = await apiGet(`/1/notices/${noticeId}`, ak || undefined);
+    const res = await apiGet(`/@academy/notices/${noticeId}`, ak || undefined);
     const data = await res.json();
     if (!res.ok) { showMsg(data.message || '조회 실패', false); return; }
     notice = data;
@@ -147,7 +150,7 @@ async function markRead() {
   if (!authKey) { showMsg('학생 인증키를 입력하세요.', false); return; }
   try {
     // body 의 authKey 는 백엔드 ReadRequest 식별용으로 유지 (헤더에도 동일 키 전송)
-    const res = await apiPost(`/1/notices/${noticeId}/read`, { authKey: authKey }, authKey);
+    const res = await apiPost(`/@academy/notices/${noticeId}/read`, { authKey: authKey }, authKey);
     const data = await res.json();
     if (!res.ok) { showMsg(data.message || '읽음 확인 실패', false); return; }
     showMsg(data.alreadyRead ? '이미 확인된 공지입니다.' : '읽음 확인되었습니다.', true);
@@ -159,7 +162,7 @@ async function markRead() {
 
 async function loadReaders() {
   try {
-    const res = await apiGet(`/1/notices/${noticeId}/readers`);
+    const res = await apiGet(`/@academy/notices/${noticeId}/readers`);
     const data = await res.json();
     if (!res.ok) return;
     document.getElementById('readers-sec').style.display = '';
@@ -172,7 +175,7 @@ async function loadReaders() {
 async function deleteNotice() {
   if (!confirm('이 공지를 삭제하시겠습니까?')) return;
   try {
-    const res = await apiDelete(`/1/notices/${noticeId}`);
+    const res = await apiDelete(`/@academy/notices/${noticeId}`);
     if (!res.ok) {
       const data = await res.json();
       showMsg(data.message || '삭제 실패', false);

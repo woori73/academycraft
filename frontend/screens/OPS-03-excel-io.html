@@ -45,8 +45,10 @@
     input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-width: 0; flex: none; accent-color: #0066cc; }
   }
 </style>
+<script defer src="../components/home-navigation.js"></script>
 </head>
 <body>
+<nav aria-label="Feel2Real 홈" style="position:relative;z-index:1;margin:8px 0;"><a data-feel2real-home href="https://feel2real.co.kr/" style="display:inline-flex;align-items:center;min-height:44px;padding:0 12px;color:#0066cc;white-space:nowrap;">홈으로</a></nav>
 <div class="header">
   <h1>엑셀 가져오기·내보내기</h1>
   <p style="color:#666;font-size:13px;margin-top:4px;">REA 7단계 구현 - OPS-03 · 엑셀 호환 CSV (UTF-8 BOM)</p>
@@ -103,9 +105,10 @@
   <div class="result" id="import-result"></div>
 </div>
 
+<script src="../components/auth.js"></script>
 <script src="../components/api-client.js"></script>
 <script>
-var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+var REA_API_BASE = '/api/rea'; // 학원 경로는 로그인 JWT에서 결정
 
 function showMsg(text, ok) {
   const el = document.getElementById('msg');
@@ -119,13 +122,13 @@ async function init() {
   // apiGet + Blob 방식으로 다운로드한다.
   document.getElementById('dl-students').onclick = (e) => {
     e.preventDefault();
-    downloadCsv(`/1/export/students.csv`, 'students.csv');
+    downloadCsv(`/@academy/export/students.csv`, 'students.csv');
   };
   const now = new Date();
   document.getElementById('f-ym').value =
     now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
   try {
-    const res = await apiGet(`/1/classes`);
+    const res = await apiGet(`/@academy/classes`);
     if (res.ok) {
       const list = await res.json();
       const sel = document.getElementById('f-class');
@@ -159,7 +162,7 @@ async function downloadAttendance() {
   const ym = document.getElementById('f-ym').value;
   if (!ym) { showMsg('월을 선택하세요.', false); return; }
   const classId = document.getElementById('f-class').value;
-  let path = `/1/export/attendance.csv?yearMonth=${encodeURIComponent(ym)}`;
+  let path = `/@academy/export/attendance.csv?yearMonth=${encodeURIComponent(ym)}`;
   if (classId) path += `&classId=${encodeURIComponent(classId)}`;
   await downloadCsv(path, `attendance-${ym}.csv`);
 }
@@ -173,7 +176,7 @@ async function importStudents() {
   if (!csv.trim()) { showMsg('CSV 내용을 입력하거나 파일을 선택하세요.', false); return; }
   try {
     // CSV 원문 전송 (Content-Type: text/csv) — X-Auth-Key 헤더는 api-client 가 자동 추가
-    const res = await apiPostText(`/1/import/students.csv`, csv, 'text/csv; charset=UTF-8');
+    const res = await apiPostText(`/@academy/import/students.csv`, csv, 'text/csv; charset=UTF-8');
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.message || '가져오기 실패');

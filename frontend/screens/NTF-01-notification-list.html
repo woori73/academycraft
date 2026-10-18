@@ -49,8 +49,10 @@
     select, textarea { min-height: 44px; font-size: 16px; }
   }
 </style>
+<script defer src="../components/home-navigation.js"></script>
 </head>
 <body>
+<nav aria-label="Feel2Real 홈" style="position:relative;z-index:1;margin:8px 0;"><a data-feel2real-home href="https://feel2real.co.kr/" style="display:inline-flex;align-items:center;min-height:44px;padding:0 12px;color:#0066cc;white-space:nowrap;">홈으로</a></nav>
 <div class="header">
   <h1>알림 목록 <span class="badge" id="unread-badge" style="display:none"></span></h1>
   <p style="color:#666;font-size:13px;margin-top:4px;">REA 3단계 구현 - NTF-01 · 수신한 알림 · 읽음 처리 · 알림 설정</p>
@@ -70,9 +72,10 @@
   <button class="btn btn-sm" style="margin-top:10px" onclick="saveSettings()">설정 저장</button>
 </div>
 
+<script src="../components/auth.js"></script>
 <script src="../components/api-client.js"></script>
 <script>
-var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+var REA_API_BASE = '/api/rea'; // 학원 경로는 로그인 JWT에서 결정
 let settingsCache = [];
 
 function showMsg(text, ok) {
@@ -95,7 +98,7 @@ async function loadAll() {
 
 async function loadList(key) {
   // 학생 인증키는 URL 파라미터에 포함하지 않고 X-Auth-Key 헤더로만 전송
-  const res = await apiGet(`/1/notifications`, key);
+  const res = await apiGet(`/@academy/notifications`, key);
   const data = await res.json();
   if (!res.ok) { showMsg(data.message || '조회 실패', false); return; }
   const list = document.getElementById('list');
@@ -118,7 +121,7 @@ async function loadList(key) {
 }
 
 async function loadUnread(key) {
-  const res = await apiGet(`/1/notifications/unread-count`, key);
+  const res = await apiGet(`/@academy/notifications/unread-count`, key);
   if (!res.ok) return;
   const data = await res.json();
   const badge = document.getElementById('unread-badge');
@@ -134,14 +137,14 @@ async function markRead(id) {
   const key = authKey();
   if (!key) return;
   // body 의 authKey 는 백엔드 ReadRequest 식별용으로 유지 (헤더에도 동일 키 전송)
-  const res = await apiPost(`/1/notifications/${id}/read`, { authKey: key }, key);
+  const res = await apiPost(`/@academy/notifications/${id}/read`, { authKey: key }, key);
   const data = await res.json();
   if (!res.ok) { showMsg(data.message || '읽음 처리 실패', false); return; }
   await loadAll();
 }
 
 async function loadSettings(key) {
-  const res = await apiGet(`/1/notifications/settings`, key);
+  const res = await apiGet(`/@academy/notifications/settings`, key);
   const data = await res.json();
   if (!res.ok) return;
   settingsCache = data.settings;
@@ -165,7 +168,7 @@ async function saveSettings() {
   document.querySelectorAll('#settings input[type=checkbox]').forEach(cb => {
     settings.push({ type: cb.dataset.type, enabled: cb.checked });
   });
-  const res = await apiPut(`/1/notifications/settings`, { authKey: key, settings }, key);
+  const res = await apiPut(`/@academy/notifications/settings`, { authKey: key, settings }, key);
   const data = await res.json();
   if (!res.ok) { showMsg(data.message || '설정 저장 실패', false); return; }
   showMsg('알림 설정이 저장되었습니다.', true);

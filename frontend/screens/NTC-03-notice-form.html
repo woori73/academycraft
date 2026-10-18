@@ -34,8 +34,10 @@
     input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-width: 0; flex: none; accent-color: #0066cc; }
   }
 </style>
+<script defer src="../components/home-navigation.js"></script>
 </head>
 <body>
+<nav aria-label="Feel2Real 홈" style="position:relative;z-index:1;margin:8px 0;"><a data-feel2real-home href="https://feel2real.co.kr/" style="display:inline-flex;align-items:center;min-height:44px;padding:0 12px;color:#0066cc;white-space:nowrap;">홈으로</a></nav>
 <div class="header">
   <h1>공지 작성</h1>
   <p style="color:#666;font-size:13px;margin-top:4px;">REA 4단계 구현 - NTC-03 · 전체공지/반소식 · 발송 시 대상 학부모 알림</p>
@@ -80,14 +82,15 @@
   </div>
   <div class="field">
     <label>첨부파일 키 (선택)</label>
-    <input id="f-attach-key" placeholder="예: notices/1/notice-1.pdf">
+    <input id="f-attach-key" placeholder="예: notices/@academy/notice-1.pdf">
   </div>
   <button class="btn" onclick="submitNotice()">공지 등록 · 알림 발송</button>
 </div>
 
+<script src="../components/auth.js"></script>
 <script src="../components/api-client.js"></script>
 <script>
-var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+var REA_API_BASE = '/api/rea'; // 학원 경로는 로그인 JWT에서 결정
 
 function showMsg(text, ok) {
   const m = document.getElementById('msg');
@@ -102,7 +105,7 @@ function toggleClass() {
 
 async function loadClasses() {
   try {
-    const res = await apiGet(`/1/classes`);
+    const res = await apiGet(`/@academy/classes`);
     const data = await res.json();
     if (!res.ok) return;
     const sel = document.getElementById('f-class');
@@ -138,7 +141,7 @@ async function submitNotice() {
     attachmentFileKey: document.getElementById('f-attach-key').value.trim() || null
   };
   try {
-    const res = await apiPost(`/1/notices`, body);
+    const res = await apiPost(`/@academy/notices`, body);
     const data = await res.json();
     if (!res.ok) { showMsg(data.message || '등록 실패', false); return; }
     const n = data.notice;

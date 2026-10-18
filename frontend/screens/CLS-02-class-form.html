@@ -34,8 +34,10 @@
 
     .days label { padding: 12px 14px; }  }
 </style>
+<script defer src="../components/home-navigation.js"></script>
 </head>
 <body>
+<nav aria-label="Feel2Real 홈" style="position:relative;z-index:1;margin:8px 0;"><a data-feel2real-home href="https://feel2real.co.kr/" style="display:inline-flex;align-items:center;min-height:44px;padding:0 12px;color:#0066cc;white-space:nowrap;">홈으로</a></nav>
 <div class="header">
   <h1 id="title">반 생성</h1>
   <p style="color:#666;font-size:13px;margin-top:4px;">REA 1차 구현 - CLS-02</p>
@@ -92,15 +94,16 @@
   </div>
 </div>
 
+<script src="../components/auth.js"></script>
 <script src="../components/api-client.js"></script>
 <script>
-var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+var REA_API_BASE = '/api/rea'; // 학원 경로는 로그인 JWT에서 결정
 const params = new URLSearchParams(location.search);
 const classId = params.get('id');  // 있으면 수정 모드
 
 async function loadTeachers(selectedId) {
   // 담당 강사: TEACHER 또는 ACADEMY_OWNER
-  const res = await apiGet(`/1/members`);
+  const res = await apiGet(`/@academy/members`);
   const members = await res.json();
   const teachers = members.filter(m => m.role === 'TEACHER' || m.role === 'ACADEMY_OWNER');
   const sel = document.getElementById('f-teacher');
@@ -141,7 +144,7 @@ async function save() {
   const body = getForm();
   if (!body.name) { alert('반 이름을 입력하세요.'); return; }
   if (!body.teacherId) { alert('담당 강사를 선택하세요.'); return; }
-  const path = classId ? `/1/classes/${classId}` : `/1/classes`;
+  const path = classId ? `/@academy/classes/${classId}` : `/@academy/classes`;
   const res = classId ? await apiPut(path, body) : await apiPost(path, body);
   if (!res.ok) {
     const msg = await res.text();
@@ -160,7 +163,7 @@ function escapeHtml(s) {
   if (classId) {
     document.getElementById('title').textContent = '반 수정';
     document.getElementById('btn-save').textContent = '저장';
-    const res = await apiGet(`/1/classes/${classId}`);
+    const res = await apiGet(`/@academy/classes/${classId}`);
     const c = await res.json();
     await loadTeachers(c.teacherId);
     setForm(c);
