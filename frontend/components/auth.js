@@ -18,6 +18,7 @@
  */
 const Auth = (() => {
   let accessToken = null;
+  let refreshPending = null;
   let tokenExpiry = 0; // 만료 시각 (ms)
 
   async function login(loginId, password) {
@@ -50,12 +51,16 @@ const Auth = (() => {
 
   async function ensureToken() {
     if (!accessToken || Date.now() >= tokenExpiry) {
-      await refresh(); // 실패 시 로그인 페이지로
+      if (!refreshPending) refreshPending = refresh().finally(() => { refreshPending = null; });
+      await refreshPending; // 동시 화면 요청은 같은 갱신을 기다림
     }
   }
 
   async function api(path, options = {}) {
-    await ensureToken();
+    try { await ensureToken(); } catch (error) {
+      location.href = 'AUTH-01-login.html';
+      throw error;
+    }
     const res = await fetch(path, {
       ...options,
       headers: {
@@ -82,5 +87,14 @@ const Auth = (() => {
     }
   }
 
-  return { login, refresh, api, logout };
+  async function academyPath(path) {
+    await ensureToken();
+    // 화면의 학원 경로만 결정한다. 권한 판단은 서버의 JWT·학원 검증이 담당한다.
+    const payload = JSON.parse(atob(accessToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    const academyId = Number(payload.academyId);
+    if (!Number.isSafeInteger(academyId) || academyId <= 0) throw new Error('학원 정보가 없습니다.');
+    return path.replace(/^\/@academy(?=\/|$)/, '/' + academyId);
+  }
+
+  return { login, refresh, api, logout, academyPath };
 })();

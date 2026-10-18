@@ -41,6 +41,7 @@
 </style>
 </head>
 <body>
+<nav aria-label="Feel2Real 홈" style="position:relative;z-index:1;margin:8px 0;"><a href="https://feel2real.co.kr/" style="display:inline-flex;align-items:center;min-height:44px;padding:0 12px;color:#0066cc;white-space:nowrap;">홈으로</a></nav>
 <div class="header">
   <h1>숙제 등록</h1>
   <p style="color:#666;font-size:13px;margin-top:4px;">REA 6단계 구현 - HW-01 · 강사 · 반별/학생별 · 등록 시 학부모에게 숙제 알림 발송</p>
@@ -86,9 +87,10 @@
   <button class="btn" onclick="submitHomework()">숙제 등록 · 알림 발송</button>
 </div>
 
+<script src="../components/auth.js"></script>
 <script src="../components/api-client.js"></script>
 <script>
-var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+var REA_API_BASE = '/api/rea'; // 학원 경로는 로그인 JWT에서 결정
 
 function showMsg(text, ok) {
   const m = document.getElementById('msg');
@@ -99,7 +101,7 @@ function showMsg(text, ok) {
 async function loadOptions() {
   try {
     const [cr, sr] = await Promise.all([
-      apiGet(`/1/classes`), apiGet(`/1/students`)
+      apiGet(`/@academy/classes`), apiGet(`/@academy/students`)
     ]);
     const classes = await cr.json();
     const students = await sr.json();
@@ -147,7 +149,7 @@ async function submitHomework() {
     questionRefs: refs
   };
   try {
-    const res = await apiPost(`/1/homework`, body);
+    const res = await apiPost(`/@academy/homework`, body);
     const data = await res.json();
     if (!res.ok) { showMsg(data.message || '등록 실패', false); return; }
     const n = data.notificationSentCount || 0;

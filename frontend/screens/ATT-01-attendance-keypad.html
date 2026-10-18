@@ -41,6 +41,7 @@
 </style>
 </head>
 <body>
+<nav aria-label="Feel2Real 홈" style="position:relative;z-index:1;margin:8px 0;"><a href="https://feel2real.co.kr/" style="display:inline-flex;align-items:center;min-height:44px;padding:0 12px;color:#0066cc;white-space:nowrap;">홈으로</a></nav>
 <div class="header">
   <h1>출결 입력</h1>
   <p style="color:#666;font-size:13px;margin-top:4px;">REA 2단계 구현 - ATT-01 · 출석키 입력</p>
@@ -57,9 +58,10 @@
 
 <div id="result"></div>
 
+<script src="../components/auth.js"></script>
 <script src="../components/api-client.js"></script>
 <script>
-var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+var REA_API_BASE = '/api/rea'; // 학원 경로는 로그인 JWT에서 결정
 
 const display = document.getElementById('key-display');
 const pad = document.getElementById('keypad');
@@ -91,7 +93,7 @@ async function submitKey() {
   try {
     // 학생 출석키 → X-Auth-Key 헤더로 전송 (URL·localStorage에 남기지 않음).
     // body 의 authKey 는 백엔드 KeypadRequest 식별용으로 유지.
-    const res = await apiPost(`/1/attendance/keypad`, { authKey }, authKey);
+    const res = await apiPost(`/@academy/attendance/keypad`, { authKey }, authKey);
     const data = await res.json();
     box.style.display = 'block';
     if (!res.ok) {

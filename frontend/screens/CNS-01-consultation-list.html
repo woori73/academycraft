@@ -48,6 +48,7 @@
 </style>
 </head>
 <body>
+<nav aria-label="Feel2Real 홈" style="position:relative;z-index:1;margin:8px 0;"><a href="https://feel2real.co.kr/" style="display:inline-flex;align-items:center;min-height:44px;padding:0 12px;color:#0066cc;white-space:nowrap;">홈으로</a></nav>
 <div class="header">
   <h1>문의 목록</h1>
   <p style="color:#666;font-size:13px;margin-top:4px;">REA 5단계 구현 - CNS-01 · 내 1:1 상담 스레드 (문의·아이소식)</p>
@@ -67,9 +68,10 @@
 <div class="msg" id="msg"></div>
 <div id="list"></div>
 
+<script src="../components/auth.js"></script>
 <script src="../components/api-client.js"></script>
 <script>
-var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+var REA_API_BASE = '/api/rea'; // 학원 경로는 로그인 JWT에서 결정
 let typeFilter = '';
 
 function showMsg(text, ok) {
@@ -95,7 +97,7 @@ async function loadList() {
   const key = authKey();
   if (!key) return;
   // 학생 인증키는 X-Auth-Key 헤더로만 전송 (URL 파라미터 사용 안 함)
-  let url = `/1/consultations`;
+  let url = `/@academy/consultations`;
   if (typeFilter) url += `?type=${typeFilter}`;
   const res = await apiGet(url, key);
   const data = await res.json();

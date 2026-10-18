@@ -44,6 +44,7 @@
 </style>
 </head>
 <body>
+<nav aria-label="Feel2Real 홈" style="position:relative;z-index:1;margin:8px 0;"><a href="https://feel2real.co.kr/" style="display:inline-flex;align-items:center;min-height:44px;padding:0 12px;color:#0066cc;white-space:nowrap;">홈으로</a></nav>
 <div class="header">
   <h1>반별 출결부</h1>
   <p style="color:#666;font-size:13px;margin-top:4px;">REA 2단계 구현 - ATT-03 · 반·일자별 출결 상태</p>
@@ -58,9 +59,10 @@
 <div id="summary" style="margin-bottom:8px;color:#555;font-size:14px;"></div>
 <div id="list"></div>
 
+<script src="../components/auth.js"></script>
 <script src="../components/api-client.js"></script>
 <script>
-var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+var REA_API_BASE = '/api/rea'; // 학원 경로는 로그인 JWT에서 결정
 
 const STATUS_LABEL = {
   PRESENT: '등원', CHECKED_OUT: '하원완료', ABSENT: '결석',
@@ -71,7 +73,7 @@ document.getElementById('date-in').value = new Date().toISOString().slice(0, 10)
 loadClasses();
 
 async function loadClasses() {
-  const res = await apiGet(`/1/classes`);
+  const res = await apiGet(`/@academy/classes`);
   const classes = await res.json();
   const sel = document.getElementById('class-sel');
   classes.forEach(c => {
@@ -86,7 +88,7 @@ async function loadRoster() {
   const classId = document.getElementById('class-sel').value;
   const date = document.getElementById('date-in').value;
   if (!classId || !date) { alert('반과 일자를 선택하세요.'); return; }
-  const res = await apiGet(`/1/attendance/roster?classId=${classId}&date=${date}`);
+  const res = await apiGet(`/@academy/attendance/roster?classId=${classId}&date=${date}`);
   const data = await res.json();
   if (!res.ok) { alert(data.message || '조회 실패'); return; }
 
@@ -127,7 +129,7 @@ async function loadRoster() {
 async function quickCheck(studentId, eventType) {
   const note = prompt('메모 (선택, 결석·지각 사유 등):', '');
   if (note === null) return;
-  const res = await apiPost(`/1/attendance/check`, { studentId, eventType, note: note || null });
+  const res = await apiPost(`/@academy/attendance/check`, { studentId, eventType, note: note || null });
   const data = await res.json();
   if (!res.ok) { alert(data.message || '기록 실패'); return; }
   loadRoster();
@@ -138,7 +140,7 @@ async function correctLast(eventId, studentName) {
   if (type === null) return;
   const reason = prompt('정정 사유 (필수):', '');
   if (reason === null || !reason.trim()) { alert('정정 사유는 필수입니다.'); return; }
-  const res = await apiPut(`/1/attendance/${eventId}`, { eventType: type.trim().toUpperCase(), reason: reason.trim() });
+  const res = await apiPut(`/@academy/attendance/${eventId}`, { eventType: type.trim().toUpperCase(), reason: reason.trim() });
   const data = await res.json();
   if (!res.ok) { alert(data.message || '정정 실패'); return; }
   loadRoster();

@@ -42,6 +42,7 @@
 </style>
 </head>
 <body>
+<nav aria-label="Feel2Real 홈" style="position:relative;z-index:1;margin:8px 0;"><a href="https://feel2real.co.kr/" style="display:inline-flex;align-items:center;min-height:44px;padding:0 12px;color:#0066cc;white-space:nowrap;">홈으로</a></nav>
 <div class="header">
   <h1>월별 출결 현황</h1>
   <p style="color:#666;font-size:13px;margin-top:4px;">REA 2단계 구현 - ATT-02 · 달력 형태 집계</p>
@@ -62,9 +63,10 @@
 
 <div class="table-wrap"><table id="tbl"></table></div>
 
+<script src="../components/auth.js"></script>
 <script src="../components/api-client.js"></script>
 <script>
-var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+var REA_API_BASE = '/api/rea'; // 학원 경로는 로그인 JWT에서 결정
 
 const DAY_LABEL = { IN: '출', OUT: '출', LATE: '지', ABSENT: '결', EARLY_LEAVE: '조', NONE: '-' };
 
@@ -72,7 +74,7 @@ document.getElementById('month-in').value = new Date().toISOString().slice(0, 7)
 loadClasses();
 
 async function loadClasses() {
-  const res = await apiGet(`/1/classes`);
+  const res = await apiGet(`/@academy/classes`);
   const classes = await res.json();
   const sel = document.getElementById('class-sel');
   classes.forEach(c => {
@@ -87,7 +89,7 @@ async function loadMonthly() {
   const classId = document.getElementById('class-sel').value;
   const yearMonth = document.getElementById('month-in').value;
   if (!classId || !yearMonth) { alert('반과 월을 선택하세요.'); return; }
-  const res = await apiGet(`/1/attendance/monthly?classId=${classId}&yearMonth=${yearMonth}`);
+  const res = await apiGet(`/@academy/attendance/monthly?classId=${classId}&yearMonth=${yearMonth}`);
   const data = await res.json();
   if (!res.ok) { alert(data.message || '조회 실패'); return; }
 

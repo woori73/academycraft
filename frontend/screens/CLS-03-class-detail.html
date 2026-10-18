@@ -40,6 +40,7 @@
 </style>
 </head>
 <body>
+<nav aria-label="Feel2Real 홈" style="position:relative;z-index:1;margin:8px 0;"><a href="https://feel2real.co.kr/" style="display:inline-flex;align-items:center;min-height:44px;padding:0 12px;color:#0066cc;white-space:nowrap;">홈으로</a></nav>
 <div class="header">
   <h1 id="class-name">반 상세</h1>
   <p style="color:#666;font-size:13px;margin-top:4px;">REA 1차 구현 - CLS-03</p>
@@ -74,9 +75,10 @@
   </div>
 </div>
 
+<script src="../components/auth.js"></script>
 <script src="../components/api-client.js"></script>
 <script>
-var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+var REA_API_BASE = '/api/rea'; // 학원 경로는 로그인 JWT에서 결정
 const classId = new URLSearchParams(location.search).get('id');
 const DAY_LABEL = { MON: '월', TUE: '화', WED: '수', THU: '목', FRI: '금', SAT: '토', SUN: '일' };
 let classData = null;
@@ -91,7 +93,7 @@ function scheduleText(c) {
 }
 
 async function loadDetail() {
-  const res = await apiGet(`/1/classes/${classId}`);
+  const res = await apiGet(`/@academy/classes/${classId}`);
   if (!res.ok) { alert('반을 찾을 수 없습니다.'); location.href = 'CLS-01-class-list.html'; return; }
   classData = await res.json();
   document.getElementById('class-name').textContent = classData.name + (classData.active ? '' : ' [종료]');
@@ -127,7 +129,7 @@ async function loadDetail() {
 }
 
 async function loadOtherClasses() {
-  const res = await apiGet(`/1/classes`);
+  const res = await apiGet(`/@academy/classes`);
   const classes = await res.json();
   otherClasses = classes.filter(c => String(c.id) !== String(classId));
 }
@@ -139,7 +141,7 @@ function toggleAssign() {
 }
 
 async function loadCandidates() {
-  const res = await apiGet(`/1/students`);
+  const res = await apiGet(`/@academy/students`);
   const all = await res.json();
   const enrolled = new Set((classData.students || []).map(s => s.id));
   const candidates = all.filter(s => !enrolled.has(s.id));
@@ -153,7 +155,7 @@ async function loadCandidates() {
 async function assignSelected() {
   const ids = [...document.querySelectorAll('#candidates input:checked')].map(el => Number(el.value));
   if (!ids.length) { alert('배정할 학생을 선택하세요.'); return; }
-  const res = await apiPost(`/1/classes/${classId}/students`, { studentIds: ids });
+  const res = await apiPost(`/@academy/classes/${classId}/students`, { studentIds: ids });
   if (!res.ok) { alert('배정 실패: ' + await res.text()); return; }
   toggleAssign();
   loadDetail();
@@ -163,7 +165,7 @@ async function removeStudent(studentId) {
   const s = (classData.students || []).find(x => x.id === studentId);
   const name = s ? s.name : '';
   if (!confirm(`'${name}' 학생을 이 반에서 제외하시겠습니까?`)) return;
-  const res = await apiDelete(`/1/classes/${classId}/students/${studentId}`);
+  const res = await apiDelete(`/@academy/classes/${classId}/students/${studentId}`);
   if (!res.ok) { alert('제외 실패: ' + await res.text()); return; }
   loadDetail();
 }
@@ -173,14 +175,14 @@ async function moveStudent(studentId) {
   const toClassId = sel.value;
   if (!toClassId) { alert('이동할 반을 선택하세요.'); return; }
   if (!confirm('선택한 반으로 이동하시겠습니까?')) return;
-  const res = await apiPost(`/1/classes/${classId}/students/${studentId}/move`, { toClassId: Number(toClassId) });
+  const res = await apiPost(`/@academy/classes/${classId}/students/${studentId}/move`, { toClassId: Number(toClassId) });
   if (!res.ok) { alert('이동 실패: ' + await res.text()); return; }
   loadDetail();
 }
 
 async function closeClass() {
   if (!confirm('반을 종료하시겠습니까? 소속 학생 배정이 모두 해제됩니다.')) return;
-  const res = await apiPost(`/1/classes/${classId}/close`);
+  const res = await apiPost(`/@academy/classes/${classId}/close`);
   if (!res.ok) { alert('종료 실패: ' + await res.text()); return; }
   loadDetail();
 }

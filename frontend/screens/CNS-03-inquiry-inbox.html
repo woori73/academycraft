@@ -59,6 +59,7 @@
 </style>
 </head>
 <body>
+<nav aria-label="Feel2Real 홈" style="position:relative;z-index:1;margin:8px 0;"><a href="https://feel2real.co.kr/" style="display:inline-flex;align-items:center;min-height:44px;padding:0 12px;color:#0066cc;white-space:nowrap;">홈으로</a></nav>
 <div class="header">
   <h1>문의 모음</h1>
   <p style="color:#666;font-size:13px;margin-top:4px;">REA 5단계 구현 - CNS-03 · 학부모 문의 확인·답변 (원장·강사용)</p>
@@ -91,9 +92,10 @@
   </div>
 </div>
 
+<script src="../components/auth.js"></script>
 <script src="../components/api-client.js"></script>
 <script>
-var REA_API_BASE = '/api/rea'; // academyId=1 은 각 API 경로의 '/1/' 로 지정 (개발용)
+var REA_API_BASE = '/api/rea'; // 학원 경로는 로그인 JWT에서 결정
 let statusFilter = '';
 let selectedId = null;
 
@@ -118,7 +120,7 @@ function setStatus(s) {
 
 async function loadList() {
   if (!memberId()) return;
-  let url = `/1/consultations?type=INQUIRY`;
+  let url = `/@academy/consultations?type=INQUIRY`;
   if (statusFilter) url += `&status=${statusFilter}`;
   const res = await apiGet(url);
   const data = await res.json();
@@ -143,7 +145,7 @@ async function loadList() {
 
 async function selectThread(id) {
   selectedId = id;
-  const res = await apiGet(`/1/consultations/${id}`);
+  const res = await apiGet(`/@academy/consultations/${id}`);
   const c = await res.json();
   if (!res.ok) { showMsg(c.message || '상세 조회 실패', false); return; }
   document.getElementById('detail').style.display = 'block';
@@ -169,7 +171,7 @@ async function sendReply() {
   if (!mid || !selectedId) { showMsg('스레드를 먼저 선택하세요.', false); return; }
   const content = document.getElementById('reply-text').value.trim();
   if (!content) { showMsg('답변 내용을 입력하세요.', false); return; }
-  const res = await apiPost(`/1/consultations/${selectedId}/messages`, { memberId: Number(mid), content });
+  const res = await apiPost(`/@academy/consultations/${selectedId}/messages`, { memberId: Number(mid), content });
   const data = await res.json();
   if (!res.ok) { showMsg(data.message || '답변 전송 실패', false); return; }
   const note = data.notificationSentCount > 0 ? ' (학부모 알림 발송됨)'
