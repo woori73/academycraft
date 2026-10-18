@@ -14,12 +14,12 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
-import java.time.LocalTime;
+import java.time.LocalDateTime;
 import java.time.YearMonth;
-import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 /**
  * 출결 관리 서비스 테스트 (H2 인메모리).
@@ -157,16 +157,18 @@ class AttendanceServiceTest {
     @Test
     @DisplayName("하원 가능 시간 전 하원 기록은 409")
     void checkOutBeforeAllowedTime_throws409() {
-        String future = LocalTime.now().plusHours(2).format(DateTimeFormatter.ofPattern("HH:mm"));
+        LocalDateTime noon = LocalDate.now().atTime(12, 0);
         attendanceService.updateSettings(ACADEMY, AttendanceDto.SettingsRequest.builder()
-                .checkOutEarliestTime(future).build());
+                .checkOutEarliestTime("14:00").build());
 
-        // 등원은 가능
-        attendanceService.keypadCheck(ACADEMY, keypadReq(authKey1));
-        // 하원은 거부
-        assertThatThrownBy(() -> attendanceService.keypadCheck(ACADEMY, keypadReq(authKey1)))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("하원 가능 시간");
+        // Keep the same-day comparison stable even when CI runs near midnight.
+        try (var time = mockStatic(LocalDateTime.class, CALLS_REAL_METHODS)) {
+            time.when(LocalDateTime::now).thenReturn(noon);
+            attendanceService.keypadCheck(ACADEMY, keypadReq(authKey1));
+            assertThatThrownBy(() -> attendanceService.keypadCheck(ACADEMY, keypadReq(authKey1)))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("하원 가능 시간");
+        }
     }
 
     // ===== 반별 출결부 =====
