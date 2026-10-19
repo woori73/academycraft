@@ -175,3 +175,14 @@ AcademyCraft 원장은 별도 login_id와 별도 자격증명을 사용한다. �
 BuildIt user_id, 홈페이지용 academy_id, 학원 운영용 academy_id, 학원 business_id,
 AcademyCraft academy_id/member_id를 역할별로 구분해 관리해야 하며, 동일 이름/번호를 동일 계정으로 간주하지 않는다.
 현재 참조 기록 파일은 자동 SSO나 접근권한을 부여하지 않는다. 초기화의 모호성 차단은 유지한다.
+
+
+## 독립 최초 등록 — 학원11 삭제와 분리
+
+--independent-eduholic 모드는 사용자가 확인한 홈페이지12/user54/modu/handle eduholic과
+사업체1/code ACADEMY/active를 SELECT로 대조한다. 테스트 학원11의 존재는 차단 조건이 아니다.
+실제 학원 운영용 BuildIt academy_id는 미확정이므로 홈페이지용 식별자와 별도(null)로 기록한다.
+기존 LINKS가 없으면 buildit_link_verified=false를 기록하며 BuildIt에 연결 행을 만들지 않는다.
+ADMIN의 학원20 초안과 users4·53·54, 출판사 사업체2를 변경하지 않는다.
+AcademyCraft 자체 학원 ID와 별도 원장 login을 발급하고 SSO는 활성화하지 않는다.
+admin-f2r/modu/edu-holic 로그인명을 재사용하지 않는다. 기존 빈 DB·백업·숨김 비밀번호 검사 유지.

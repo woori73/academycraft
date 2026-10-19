@@ -75,14 +75,23 @@ def main():
   print('Read-only AcademyCraft counts (academies, members):',counts)
   if sys.argv[1:]==['--inspect']:
    print('INSPECT ONLY: no backup repair, account, academy or DB writes performed.');return
-  require(not sys.argv[1:],'Unknown option; use --inspect or no arguments')
+  independent=sys.argv[1:]==['--independent-eduholic']
+  require(not sys.argv[1:] or independent,'Unknown option; use --inspect or --independent-eduholic')
   require(counts=='0\t0','Not an empty first installation; no duplicate academy/account/reset performed')
-  require(len(businesses)<=1 and len(academies)<=1 and len(links)<=1,'Ambiguous BuildIt identity; review candidate IDs above; no account created')
-  require(not links or (businesses and academies and links[0][:2]==(businesses[0][0],academies[0][0])),'BuildIt link/name mismatch; private review required')
-  # AcademyCraft IDs have their own namespace. Record references; never invent an SSO mapping.
-  identity={'academy_name':target,'buildit_business_id':businesses[0][0] if businesses else None,
-            'buildit_academy_id':academies[0][0] if academies else None,
-            'buildit_link_verified':bool(links),'sso_enabled':False}
+  if independent:
+   # User-confirmed production homepage; 11 is a retained test academy, never a prerequisite to delete.
+   require(sql(ac,db,"SELECT COUNT(*) FROM academies a JOIN users u ON u.user_id=a.tutor_user_id WHERE a.academy_id=12 AND a.tutor_user_id=54 AND a.handle='eduholic' AND u.login_id='modu';")=='1','Production homepage identity changed; stopped')
+   require(sql(ac,db,"SELECT COUNT(*) FROM easy_businesses WHERE business_id=1 AND code='ACADEMY' AND active=1;")=='1','Academy business identity changed; stopped')
+   identity={'academy_name':target,'buildit_business_id':1,'buildit_homepage_academy_id':12,
+             'buildit_homepage_user_id':54,'buildit_management_academy_id':None,
+             'buildit_link_verified':any(r[:2]==(1,12) for r in links),
+             'excluded_test_academy_id':11,'sso_enabled':False}
+  else:
+   require(len(businesses)<=1 and len(academies)<=1 and len(links)<=1,'Ambiguous BuildIt identity; review candidate IDs above; no account created')
+   require(not links or (businesses and academies and links[0][:2]==(businesses[0][0],academies[0][0])),'BuildIt link/name mismatch; private review required')
+   identity={'academy_name':target,'buildit_business_id':businesses[0][0] if businesses else None,
+             'buildit_academy_id':academies[0][0] if academies else None,
+             'buildit_link_verified':bool(links),'sso_enabled':False}
   require(not Path('/etc/academycraft/bootstrap-identity.json').exists(),'Bootstrap identity already exists; review privately')
   academy_name=target
   print('AcademyCraft first academy:',academy_name,'(independent DB; BuildIt unchanged)')
@@ -90,6 +99,7 @@ def main():
   require(backup.returncode==0,'Backup failed; initialization stopped before password/account creation. No backup output or credentials printed.')
   print('PASS: pre-registration backup completed.')
   login=input('New owner login ID: ').strip();name=input('Owner display name: ').strip()
+  require(login not in ('admin-f2r','modu','edu-holic'),'Use a separate AcademyCraft owner login ID')
   require(re.fullmatch(r'[A-Za-z0-9_.@-]{3,50}',login) and 1<=len(name)<=50,'Invalid login/display name')
   require(sql(own,'academycraft','SELECT COUNT(*) FROM rea_members WHERE login_id='+lit(login)+';')=='0','Login ID already exists')
   password=getpass.getpass('Initial password (hidden, at least 12 characters): ')
