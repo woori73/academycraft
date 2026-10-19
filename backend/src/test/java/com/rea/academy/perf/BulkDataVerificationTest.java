@@ -42,7 +42,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *
  * <p>측정: MockMvc(HTTP 스택 포함)를 통한 API 응답 시간. 화면 목표 3초 이내.</p>
  */
-@SpringBootTest
+@SpringBootTest(properties = "spring.datasource.url=jdbc:h2:mem:rea_bulk_verification;DB_CLOSE_DELAY=-1")
 @AutoConfigureMockMvc
 @Transactional
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
