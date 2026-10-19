@@ -18,6 +18,10 @@ on:
         default: inspect
         type: choice
         options: [inspect, update, initial]
+      existing_command_id:
+        description: '기존 SSM 명령 결과만 조회 (새 서버 작업 실행 안 함)'
+        required: false
+        type: string
       bindings_json:
         description: 'update 전용: 검토·승인된 기존 소속 JSON 배열 (비밀값 금지)'
         required: false
@@ -908,20 +912,20 @@ jobs:
           with open(os.environ['GITHUB_OUTPUT'],'a') as f:f.write('hashes='+','.join(good)+'\n')
           PYCODE
       - name: 검증된 AcademyCraft 코드 체크아웃
-        if: inputs.operation == 'update'
+        if: inputs.operation == 'update' && inputs.existing_command_id == ''
         uses: actions/checkout@v4
         with:
           ref: ${{ needs.guard.outputs.sha }}
           path: source
       - uses: actions/setup-java@v4
-        if: inputs.operation == 'update'
+        if: inputs.operation == 'update' && inputs.existing_command_id == ''
         with:
           distribution: temurin
           java-version: '21'
           cache: maven
           cache-dependency-path: source/pom.xml
       - name: 기존 CI 결과 확인 (재실행 없음)
-        if: inputs.operation == 'update'
+        if: inputs.operation == 'update' && inputs.existing_command_id == ''
         env:
           GH_TOKEN: ${{ github.token }}
           DEPLOY_SHA: ${{ needs.guard.outputs.sha }}
@@ -935,7 +939,7 @@ jobs:
           if not rows or rows[0]['status']!='completed' or rows[0]['conclusion']!='success': raise SystemExit('Pinned main CI is not successful')
           PYCODE
       - name: 기존 검증 코드 패키징 (테스트 재실행 없음)
-        if: inputs.operation == 'update'
+        if: inputs.operation == 'update' && inputs.existing_command_id == ''
         working-directory: source
         shell: bash
         run: |
@@ -944,7 +948,7 @@ jobs:
           cp -r frontend/* backend/src/main/resources/static/
           mvn -B package -DskipTests
       - name: SHA 고정 JAR 업로드
-        if: inputs.operation == 'update'
+        if: inputs.operation == 'update' && inputs.existing_command_id == ''
         id: artifact
         env:
           DEPLOY_SHA: ${{ needs.guard.outputs.sha }}
@@ -963,6 +967,7 @@ jobs:
           HASHES: ${{ steps.account.outputs.hashes }}
           DEPLOY_SHA: ${{ needs.guard.outputs.sha }}
           DIGEST: ${{ steps.artifact.outputs.digest }}
+          EXISTING_COMMAND: ${{ inputs.existing_command_id }}
         shell: bash
         run: |
           set -euo pipefail
@@ -974,8 +979,17 @@ jobs:
           command='echo '+code+' | base64 -d | python3 - '+' '.join(map(shlex.quote,args))
           print(json.dumps({'commands':['set -eu',command]}))
           PYCODE
-          CID=$(aws ssm send-command --instance-ids "$EC2_INSTANCE_ID" --document-name AWS-RunShellScript --parameters file:///tmp/ssm-operation.json --query Command.CommandId --output text)
+          if [ -n "$EXISTING_COMMAND" ]; then
+            [[ "$EXISTING_COMMAND" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || exit 1
+            CID="$EXISTING_COMMAND"
+          else
+            CID=$(aws ssm send-command --instance-ids "$EC2_INSTANCE_ID" --document-name AWS-RunShellScript --parameters file:///tmp/ssm-operation.json --query Command.CommandId --output text)
+          fi
           echo "SSM command: $CID"
-          aws ssm wait command-executed --command-id "$CID" --instance-id "$EC2_INSTANCE_ID" || true
+          for _ in $(seq 1 180); do
+            STATUS=$(aws ssm get-command-invocation --command-id "$CID" --instance-id "$EC2_INSTANCE_ID" --query Status --output text)
+            case "$STATUS" in Success|Failed|Cancelled|TimedOut|Cancelling) break;; esac
+            sleep 5
+          done
           aws ssm get-command-invocation --command-id "$CID" --instance-id "$EC2_INSTANCE_ID" --query '{Status:Status,Output:StandardOutputContent,Error:StandardErrorContent}' --output json
           [ "$(aws ssm get-command-invocation --command-id "$CID" --instance-id "$EC2_INSTANCE_ID" --query Status --output text)" = Success ]
