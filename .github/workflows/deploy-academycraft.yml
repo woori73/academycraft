@@ -12,6 +12,17 @@ name: Deploy AcademyCraft (manual)
 on:
   workflow_dispatch:
     inputs:
+      operation:
+        description: 'inspect=소속 읽기 전용 확인, update=기존 배포 업데이트, initial=최초 설치'
+        required: true
+        default: inspect
+        type: choice
+        options: [inspect, update, initial]
+      bindings_json:
+        description: 'update 전용: 검토·승인된 기존 소속 JSON 배열 (비밀값 금지)'
+        required: false
+        default: '[]'
+        type: string
       confirm:
         description: '배포 확인 문구. 정확히 DEPLOY 를 입력해야 실행됩니다'
         required: true
@@ -66,8 +77,14 @@ jobs:
         env:
           CONFIRM: ${{ inputs.confirm }}
           MANUAL_CHECKS: ${{ inputs.manual_checks }}
+          OPERATION: ${{ inputs.operation }}
         run: |
           set -euo pipefail
+          if [ "$OPERATION" = inspect ]; then
+            [ "$CONFIRM" = INSPECT ] || exit 1
+            exit 0
+          fi
+          [ "$OPERATION" = update ] || [ "$OPERATION" = initial ] || exit 1
           if [ "$CONFIRM" != "DEPLOY" ]; then
             echo "::error::배포 확인 문구가 일치하지 않습니다. 실행을 중단합니다."
             exit 1
@@ -118,6 +135,7 @@ jobs:
   #    7개 항목 모두 통과해야 다음 단계 진행
   # ------------------------------------------------------------------
   precheck:
+    if: inputs.operation == 'initial'
     name: 배포 직전 사전점검 (7개 항목)
     needs: guard
     runs-on: ubuntu-latest
@@ -232,6 +250,7 @@ jobs:
   #    precheck 완료 후에만 실행 (S3 업로드 순서 보장)
   # ------------------------------------------------------------------
   build:
+    if: inputs.operation == 'initial'
     name: JAR 빌드·검증·업로드
     needs: [guard, precheck]
     runs-on: ubuntu-latest
@@ -302,6 +321,7 @@ jobs:
   #    DB 관리자 비밀번호는 GitHub에 없음 — EC2가 호스트 내부 환경 파일에서 직접 조회
   # ------------------------------------------------------------------
   deploy:
+    if: inputs.operation == 'initial'
     name: EC2 배포 실행
     needs: [guard, precheck, build]
     runs-on: ubuntu-latest
@@ -765,6 +785,7 @@ jobs:
   #    DB 비밀번호는 EC2의 /etc/academycraft/env 에서 읽음 (GitHub 무관)
   # ------------------------------------------------------------------
   verify:
+    if: inputs.operation == 'initial'
     name: 배포 검증
     needs: [guard, deploy]
     runs-on: ubuntu-latest
@@ -848,3 +869,113 @@ jobs:
           이상 발생 시 `sudo systemctl stop academycraft` 후 보고하세요.
           EOF
 
+
+  existing:
+    name: 기존 배포 점검·업데이트 (삭제·초기화 없음)
+    if: inputs.operation == 'inspect' || inputs.operation == 'update'
+    needs: guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: operations
+      - name: 운영 스크립트 자체 검증
+        run: python3 -m unittest discover -s operations/ops -p 'test_*.py'
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: 신규 AWS·RDS 백업 확인
+        id: account
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$(aws sts get-caller-identity --query Account --output text)" = 425805163960 ]
+          aws rds describe-db-instances --output json > /tmp/new-rds.json
+          python3 - <<'PYCODE'
+          import json,hashlib,datetime,os
+          rows=json.load(open('/tmp/new-rds.json'))['DBInstances']
+          now=datetime.datetime.now(datetime.timezone.utc)
+          good=[]
+          for row in rows:
+            restore=datetime.datetime.fromisoformat(row['LatestRestorableTime'].replace('Z','+00:00'))
+            if row['BackupRetentionPeriod']<1 or (now-restore).total_seconds()>1800: continue
+            good.append(hashlib.sha256(row['Endpoint']['Address'].encode()).hexdigest())
+            print('backup:',row['DBInstanceIdentifier'],row['BackupRetentionPeriod'],restore.isoformat())
+          if not good: raise SystemExit('No recent new-account RDS backup')
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f:f.write('hashes='+','.join(good)+'\n')
+          PYCODE
+      - name: 검증된 AcademyCraft 코드 체크아웃
+        if: inputs.operation == 'update'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.guard.outputs.sha }}
+          path: source
+      - uses: actions/setup-java@v4
+        if: inputs.operation == 'update'
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: source/pom.xml
+      - name: 기존 CI 결과 확인 (재실행 없음)
+        if: inputs.operation == 'update'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEPLOY_SHA: ${{ needs.guard.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/woori73/academycraft/actions/runs?head_sha=$DEPLOY_SHA&event=push" --jq '.workflow_runs' > /tmp/ci.json
+          python3 - <<'PYCODE'
+          import json
+          rows=[r for r in json.load(open('/tmp/ci.json')) if r['name']=='CI']
+          if not rows or rows[0]['status']!='completed' or rows[0]['conclusion']!='success': raise SystemExit('Pinned main CI is not successful')
+          PYCODE
+      - name: 기존 검증 코드 패키징 (테스트 재실행 없음)
+        if: inputs.operation == 'update'
+        working-directory: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p backend/src/main/resources/static
+          cp -r frontend/* backend/src/main/resources/static/
+          mvn -B package -DskipTests
+      - name: SHA 고정 JAR 업로드
+        if: inputs.operation == 'update'
+        id: artifact
+        env:
+          DEPLOY_SHA: ${{ needs.guard.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          JAR=source/target/academycraft-1.0.0.jar
+          test -f "$JAR"
+          DIGEST=$(sha256sum "$JAR" | cut -d' ' -f1)
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          aws s3 cp "$JAR" "$DEPLOY_S3_PREFIX/$DEPLOY_SHA/academycraft.jar" --only-show-errors
+      - name: 기존 서버에서 점검 또는 백업 후 업데이트
+        env:
+          OPERATION: ${{ inputs.operation }}
+          BINDINGS: ${{ inputs.bindings_json }}
+          HASHES: ${{ steps.account.outputs.hashes }}
+          DEPLOY_SHA: ${{ needs.guard.outputs.sha }}
+          DIGEST: ${{ steps.artifact.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PYCODE' > /tmp/ssm-operation.json
+          import base64,json,os,pathlib,shlex
+          code=base64.b64encode(pathlib.Path('operations/ops/existing-deployment.py').read_bytes()).decode()
+          binding=base64.b64encode(os.environ['BINDINGS'].encode()).decode()
+          args=[os.environ['OPERATION'],os.environ['HASHES'],binding,os.environ['DEPLOY_SHA'],os.environ.get('DIGEST','')]
+          command='echo '+code+' | base64 -d | python3 - '+' '.join(map(shlex.quote,args))
+          print(json.dumps({'commands':['set -eu',command]}))
+          PYCODE
+          CID=$(aws ssm send-command --instance-ids "$EC2_INSTANCE_ID" --document-name AWS-RunShellScript --parameters file:///tmp/ssm-operation.json --query Command.CommandId --output text)
+          echo "SSM command: $CID"
+          aws ssm wait command-executed --command-id "$CID" --instance-id "$EC2_INSTANCE_ID" || true
+          aws ssm get-command-invocation --command-id "$CID" --instance-id "$EC2_INSTANCE_ID" --query '{Status:Status,Output:StandardOutputContent,Error:StandardErrorContent}' --output json
+          [ "$(aws ssm get-command-invocation --command-id "$CID" --instance-id "$EC2_INSTANCE_ID" --query Status --output text)" = Success ]

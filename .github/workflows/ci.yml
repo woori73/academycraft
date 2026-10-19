@@ -41,6 +41,9 @@ jobs:
       - name: JWT frontend checks
         run: node --test frontend/tests/*.test.cjs
 
+      - name: Existing deployment guard tests
+        run: python3 -m unittest discover -s ops -p 'test_*.py'
+
       - name: Build and test
         run: mvn -B test
 
