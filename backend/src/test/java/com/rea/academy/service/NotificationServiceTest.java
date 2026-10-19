@@ -335,6 +335,7 @@ class NotificationServiceTest {
     @Test
     @DisplayName("등원 알림 OFF 설정 시 키패드 등원해도 알림 없음")
     void checkInSettingOff_noNotification() {
+        long attendanceCountBefore = attendanceEventRepository.count();
         notificationService.updateSettings(ACADEMY, NotificationDto.SettingsRequest.builder()
                 .studentId(studentId1)
                 .settings(List.of(NotificationDto.SettingUpdate.builder()
@@ -346,7 +347,7 @@ class NotificationServiceTest {
 
         assertThat(notificationService.getNotifications(ACADEMY, studentId1, null)).isEmpty();
         // 알림은 생략되어도 출결 기록 자체는 정상 저장됨
-        assertThat(attendanceEventRepository.count()).isEqualTo(1);
+        assertThat(attendanceEventRepository.count()).isEqualTo(attendanceCountBefore + 1);
     }
 
     @Test
