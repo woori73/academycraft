@@ -51,6 +51,7 @@ public class BuildItGatewayFilter extends OncePerRequestFilter {
 
   @Override protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
       throws IOException, ServletException {
+    boolean authenticated=false;
     try {
       if (secret.getBytes(StandardCharsets.UTF_8).length<32) { reject(response,503); return; }
       String assertion=request.getHeader("X-BuildIt-Assertion"), signature=request.getHeader("X-BuildIt-Signature");
@@ -61,21 +62,23 @@ public class BuildItGatewayFilter extends OncePerRequestFilter {
       if (!MessageDigest.isEqual(HexFormat.of().parseHex(signature), HexFormat.of().parseHex(sign(secret,request.getMethod(),target,assertion,body)))) { reject(response,401); return; }
       Identity identity=json.readValue(Base64.getUrlDecoder().decode(assertion),Identity.class);
       long now=Instant.now().getEpochSecond();
-      if (Math.abs(now-identity.issuedAt())>30 || identity.nonce()==null || !identity.nonce().matches("[a-f0-9-]{36}")) { reject(response,401); return; }
+      if ((identity.issuedAt()<now-30 || identity.issuedAt()>now+5) || identity.nonce()==null || !identity.nonce().matches("[a-f0-9-]{36}")) { reject(response,401); return; }
       nonces.entrySet().removeIf(e->e.getValue()<now-31);
-      if (nonces.size()>10000 || nonces.putIfAbsent(identity.nonce(),now)!=null) { reject(response,401); return; }
+      if (nonces.size()>10000 || nonces.putIfAbsent(identity.nonce(),identity.issuedAt())!=null) { reject(response,401); return; }
       Binding binding=bindings.stream().filter(b->b.userId().equals(identity.userId()) && b.role().equals(identity.role())).findFirst().orElse(null);
       if (binding==null || !academies.findById(binding.academyId()).map(a->Boolean.TRUE.equals(a.getActive())).orElse(false)) { reject(response,403); return; }
       AuthContext context=resolve(identity,binding);
       if (context==null) { reject(response,403); return; }
       String path=request.getRequestURI();
       if (!allowed(path,request.getMethod(),binding)) { reject(response,403); return; }
+      authenticated=true;
       AuthContextHolder.set(context);
       SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(context,null,
           List.of(new SimpleGrantedAuthority("ROLE_"+context.role().name()))));
       try { chain.doFilter(new CachedRequest(request,body),response); }
       finally { AuthContextHolder.clear(); SecurityContextHolder.clearContext(); }
-    } catch (GeneralSecurityException | IllegalArgumentException e) { reject(response,401); }
+    } catch (GeneralSecurityException e) { reject(response,401); }
+      catch (IllegalArgumentException e) { if(authenticated) throw e; reject(response,401); }
   }
 
   private AuthContext resolve(Identity identity, Binding b) {
