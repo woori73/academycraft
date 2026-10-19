@@ -64,6 +64,9 @@
 var REA_API_BASE = '/api/rea'; // 학원 경로는 로그인 JWT에서 결정
 // 학원 경로는 JWT의 academyId로 공통 클라이언트에서 결정한다.
 
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
 function toggleForm() {
   const f = document.getElementById('add-form');
   f.style.display = f.style.display === 'none' ? 'block' : 'none';
@@ -78,8 +81,8 @@ async function loadStudents() {
   list.innerHTML = students.map(s => `
     <div class="student-card">
       <div class="student-info">
-        <div class="student-name">${s.name}</div>
-        <div>${s.grade || ''} ${s.parentName ? '· ' + s.parentName : ''}</div>
+        <div class="student-name">${escapeHtml(s.name)}</div>
+        <div>${escapeHtml(s.grade || '')} ${s.parentName ? '· ' + escapeHtml(s.parentName) : ''}</div>
       </div>
       <button class="btn" onclick="showDetail(${s.id})">상세·수정</button>
     </div>

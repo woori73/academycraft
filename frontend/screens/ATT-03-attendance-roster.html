@@ -121,8 +121,10 @@ async function loadRoster() {
           <button class="btn" onclick="quickCheck(${e.studentId},'LATE')">지각 기록</button>
           <button class="btn" onclick="quickCheck(${e.studentId},'CHECK_IN')">등원 기록</button>` : ''}
         ${e.events && e.events.length ? `
-          <button class="btn" onclick='correctLast(${JSON.stringify(e.events[e.events.length-1].id)},"${escapeHtml(e.studentName)}")'>정정</button>` : ''}
+          <button class="btn" data-correct>정정</button>` : ''}
       </div>`;
+    const correctionButton = card.querySelector('[data-correct]');
+    if (correctionButton) correctionButton.onclick = () => correctLast(e.events[e.events.length-1].id, e.studentName);
     list.appendChild(card);
   });
 }
