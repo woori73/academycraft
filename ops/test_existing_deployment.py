@@ -53,4 +53,24 @@ class Guards(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'Ambiguous'):
                 ops.validate_bindings([self.binding(),self.binding('ADMIN',4,7,9)],None,None)
 
+class BootstrapGuards(unittest.TestCase):
+    def test_source_ownership_mismatch_stops_before_any_insert(self):
+        import json
+        rows=[dict(id=12,userId=54,role='TUTOR',login='modu',name='A',slug='a',memberName='M'),dict(id=20,userId=99,role='ADMIN',login='admin',name='B',slug='b',memberName='N')]
+        with patch.object(ops,'client',return_value=[json.dumps(r) for r in rows]) as query:
+            with self.assertRaisesRegex(ValueError,'identity mismatch'):ops.approved_source(None)
+            self.assertEqual(query.call_count,1)
+
+    def test_existing_source_mismatch_never_adopts_or_updates(self):
+        source=[dict(id=12,userId=54,role='TUTOR',name='A',slug='a',memberName='M'),dict(id=20,userId=4,role='ADMIN',name='B',slug='b',memberName='N')]
+        with patch.object(ops,'client',return_value=['different-fingerprint']) as query:
+            with self.assertRaisesRegex(ValueError,'identity mismatch'):ops.bootstrap_members(source,None)
+            self.assertTrue(all('SELECT' in c.args[1] for c in query.call_args_list))
+
+    def test_sql_text_is_hex_encoded_not_interpolated(self):
+        value="학원'); DELETE FROM users; --"
+        quoted=ops.sqltext(value)
+        self.assertNotIn('DELETE',quoted)
+        self.assertIn(value.encode().hex(),quoted)
+
 if __name__=='__main__':unittest.main()

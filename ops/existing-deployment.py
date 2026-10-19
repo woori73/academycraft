@@ -98,6 +98,47 @@ def validate_bindings(bindings, build_db, academy_db):
     if not any(b['role']=='TUTOR' for b in bindings) or not any(b['role']=='ADMIN' for b in bindings): raise ValueError('Both roles must be explicitly mapped')
 
 
+def approved_source(build_db):
+    rows=client(build_db,"SELECT JSON_OBJECT('id',a.academy_id,'owner',a.tutor_user_id,'name',a.name,'slug',a.slug,'handle',a.handle,'userId',u.user_id,'login',u.login_id,'role',u.role,'memberName',u.name) FROM academies a JOIN users u ON u.user_id=a.tutor_user_id WHERE a.academy_id IN (12,20) ORDER BY a.academy_id")
+    rows=[json.loads(r) for r in rows]
+    if len(rows)!=2 or [(r['id'],r['userId'],r['role']) for r in rows]!=[(12,54,'TUTOR'),(20,4,'ADMIN')] or rows[0]['login']!='modu':
+        raise ValueError('Approved BuildIt ownership or identity mismatch')
+    for r in rows:
+        if not r['name'] or not r['slug'] or not r['memberName']: raise ValueError('Incomplete source academy identity')
+    return rows
+
+
+def sqltext(value):
+    return "CONVERT(0x"+str(value).encode().hex()+" USING utf8mb4)"
+
+
+def bootstrap_members(source,db):
+    # One MySQL connection, named lock, transaction, unique mapping keys. No UPDATE/DELETE.
+    # Any SQL error closes the connection and rolls back all newly inserted rows.
+    sql=["SET NAMES utf8mb4;", "SET @got=GET_LOCK('academycraft-approved-bootstrap-12-20',20);",
+         "CREATE TEMPORARY TABLE bootstrap_guard (n INT NOT NULL CHECK(n=1));",
+         "INSERT INTO bootstrap_guard VALUES (@got);", "START TRANSACTION;"]
+    for r in source:
+        bid=r['id']; digest=hashlib.sha256(json.dumps(r,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
+        existing=client(db,f"SELECT source_identity_sha256 FROM rea_buildit_academy_links WHERE buildit_academy_id={bid}")
+        if existing and existing!=[digest]: raise ValueError('Existing mapping source identity mismatch')
+        if not existing:
+            # Pre-existing unlinked academies are never adopted by name or ID.
+            sql += ["SET @aid=(SELECT COALESCE(MAX(id),0)+1 FROM rea_academies);",
+                    f"INSERT INTO rea_academies(id,name,memo,active,created_at) VALUES(@aid,{sqltext(r['name'])},{sqltext('BuildIt academy '+str(bid)+'; slug='+r['slug'])},1,NOW(6));",
+                    f"INSERT INTO rea_buildit_academy_links VALUES({bid},@aid,'{digest}',NOW(6));"]
+        for uid,role,name in [(r['userId'],r['role'],r['memberName'])]+([(4,'ADMIN',source[1]['memberName'])] if bid==12 else []):
+            sql += [f"SET @aid=(SELECT academy_id FROM rea_buildit_academy_links WHERE buildit_academy_id={bid});",
+                    f"INSERT INTO rea_members(academy_id,role,name,auth_key,active,created_at) SELECT @aid,'ACADEMY_OWNER',{sqltext(name)},REPLACE(UUID(),'-',''),1,NOW(6) WHERE NOT EXISTS(SELECT 1 FROM rea_buildit_member_links WHERE buildit_user_id={uid} AND buildit_academy_id={bid});",
+                    f"INSERT INTO rea_buildit_member_links SELECT {uid},{bid},LAST_INSERT_ID(),'{role}',NOW(6) WHERE NOT EXISTS(SELECT 1 FROM rea_buildit_member_links WHERE buildit_user_id={uid} AND buildit_academy_id={bid});"]
+    sql += ["COMMIT;", "DO RELEASE_LOCK('academycraft-approved-bootstrap-12-20');"]
+    client(db,'\n'.join(sql))
+    result=client(db,"SELECT JSON_OBJECT('userId',m.buildit_user_id,'role',m.buildit_role,'builditAcademyId',m.buildit_academy_id,'academyId',a.academy_id,'memberId',m.member_id) FROM rea_buildit_member_links m JOIN rea_buildit_academy_links a USING(buildit_academy_id) ORDER BY m.buildit_user_id,m.buildit_academy_id")
+    bindings=[json.loads(r) for r in result]
+    if {(b['userId'],b['builditAcademyId'],b['role']) for b in bindings}!={(54,12,'TUTOR'),(4,12,'ADMIN'),(4,20,'ADMIN')}: raise ValueError('Unexpected existing member mapping')
+    return bindings
+
+
 def main():
     mode=sys.argv[1]
     if mode not in ('inspect','update'): raise ValueError('Unsupported operation')
@@ -108,7 +149,7 @@ def main():
         if hashlib.sha256(info[0].encode()).hexdigest() not in approved: raise ValueError('DB is not in verified new AWS account')
     active('f2r-app');active('buildit-wiki');active('academycraft')
     versions=client(academy_db,'SELECT version FROM flyway_schema_history WHERE success=1 ORDER BY installed_rank')
-    if versions!=['1','2','3','4']: raise ValueError('Unexpected existing schema; no migration/downgrade permitted')
+    if versions not in (['1','2','3','4'],['1','2','3','4','5']): raise ValueError('Unexpected existing schema; no migration/downgrade permitted')
     if mode=='inspect':
         # Output no password, tokens, auth keys, names, contact information or student records.
         result={
@@ -124,11 +165,13 @@ def main():
         }
         print(json.dumps(result));return
     bindings=json.loads(base64.b64decode(sys.argv[3],validate=True))
-    validate_bindings(bindings,build_db,academy_db)
+    bootstrap = bindings == {'bootstrapApproved': [12, 20]}
+    if not bootstrap: validate_bindings(bindings,build_db,academy_db)
+    source = approved_source(build_db) if bootstrap else None
     # Refuse to replace existing assignments. Additional setup needs an explicit mapping review.
     previous=json.loads(academy.get('ACADEMYCRAFT_BUILDIT_BINDINGS','[]'))
     for old in previous:
-        if old not in bindings: raise ValueError('Existing membership binding would be removed or changed')
+        if not bootstrap and old not in bindings: raise ValueError('Existing membership binding would be removed or changed')
     keys={x for x in (build.get('ACADEMYCRAFT_GATEWAY_SECRET'),academy.get('ACADEMYCRAFT_GATEWAY_SECRET')) if x}
     if len(keys)>1: raise ValueError('Existing shared keys disagree')
     key=next(iter(keys),None) or secrets.token_urlsafe(48)
@@ -141,6 +184,9 @@ def main():
     files=['/opt/academycraft/academycraft.jar','/etc/academycraft/env','/etc/f2r/env']
     for i,path in enumerate(files):
         shutil.copy2(path,backup/str(i));os.chmod(backup/str(i),0o600)
+    if shutil.disk_usage(backup).free < 1024**3: raise ValueError('Insufficient backup/rollback disk space')
+    for i,path in enumerate(files):
+        if hashlib.sha256(Path(path).read_bytes()).digest()!=hashlib.sha256((backup/str(i)).read_bytes()).digest(): raise ValueError('File backup verification failed')
     # Transaction-consistent backup without running the existing retention/deletion cron.
     host,schema,user,password=academy_db
     dump=backup/'academycraft.sql'
@@ -151,11 +197,14 @@ def main():
     if dump.stat().st_size==0: raise ValueError('Empty backup')
     prefix='s3://f2r-deploy-425805163960/backups/academycraft/'+backup.name
     run(['aws','s3','cp',str(dump),prefix+'/academycraft.sql','--only-show-errors'])
+    run(['aws','s3','cp',prefix+'/academycraft.sql',str(backup/'verify.sql'),'--only-show-errors'])
+    if hashlib.sha256(dump.read_bytes()).digest()!=hashlib.sha256((backup/'verify.sql').read_bytes()).digest(): raise ValueError('Remote backup verification failed')
     stage=backup/'candidate.jar'
     run(['aws','s3','cp','s3://f2r-deploy-425805163960/academycraft/'+sha+'/academycraft.jar',str(stage),'--only-show-errors'])
     if hashlib.sha256(stage.read_bytes()).hexdigest()!=expected: raise ValueError('Artifact digest mismatch')
     try:
-        write_env('/etc/academycraft/env',{'ACADEMYCRAFT_GATEWAY_SECRET':key,'ACADEMYCRAFT_BUILDIT_BINDINGS':json.dumps(bindings,separators=(',',':'))})
+        if not bootstrap:
+            write_env('/etc/academycraft/env',{'ACADEMYCRAFT_GATEWAY_SECRET':key,'ACADEMYCRAFT_BUILDIT_BINDINGS':json.dumps(bindings,separators=(',',':'))})
         write_env('/etc/f2r/env',{'ACADEMYCRAFT_GATEWAY_SECRET':key})
         # Existing unit/DB passwords/JWT secrets and BuildIt accounts are untouched.
         candidate=Path('/opt/academycraft')/('candidate-'+sha+'.jar')
@@ -171,14 +220,27 @@ def main():
             except (subprocess.CalledProcessError,ValueError): pass
             time.sleep(3)
         else: raise ValueError('AcademyCraft health timeout')
-        if client(academy_db,'SELECT version FROM flyway_schema_history WHERE success=1 ORDER BY installed_rank')!=versions: raise ValueError('Schema unexpectedly changed')
+        after=client(academy_db,'SELECT version FROM flyway_schema_history WHERE success=1 ORDER BY installed_rank')
+        if after != ['1','2','3','4','5']: raise ValueError('Unexpected schema after additive mapping migration')
+        if bootstrap:
+            bindings=bootstrap_members(source,academy_db)
+            validate_bindings(bindings,build_db,academy_db)
+            if any(old not in bindings for old in previous): raise ValueError('Existing binding mismatch')
+            write_env('/etc/academycraft/env',{'ACADEMYCRAFT_GATEWAY_SECRET':key,'ACADEMYCRAFT_BUILDIT_BINDINGS':json.dumps(bindings,separators=(',',':'))})
+            run(['systemctl','restart','academycraft'])
+            for _ in range(60):
+                try:
+                    if health(): break
+                except (subprocess.CalledProcessError,ValueError): pass
+                time.sleep(3)
+            else: raise ValueError('Configured AcademyCraft health timeout')
     except BaseException:
         for i,path in enumerate(files):
             shutil.copyfile(backup/str(i),path);shutil.copystat(backup/str(i),path)
         shutil.chown('/opt/academycraft/academycraft.jar',user='academycraft',group='academycraft')
         run(['systemctl','restart','academycraft'])
         raise
-    print(json.dumps({'updated':sha,'backup':str(backup),'bindings':len(bindings),'builditRestarted':False,'schemaChanged':False}))
+    print(json.dumps({'updated':sha,'backup':str(backup),'bindings':len(bindings),'builditRestarted':False,'schemaVersions':after,'mapping':bindings}))
 
 
 if __name__=='__main__':

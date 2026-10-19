@@ -13,3 +13,20 @@ AcademyCraft만 중지·JAR 교체·기동한다. 기동 실패 시 JAR와 양�
 그 후 기존 BuildIt 수동 배포(target=new)로 승인된 main을 적용해야 /academycraft 게이트웨이가 활성화된다. 운영 검증은 ADMIN 및 modu 각각 실제 로그인, 학생→반→출결, 상담·공지 저장/조회, 타 학원 접근 차단, PC 1440/390px 및 기존 홈페이지·장부·TESTPREP 확인으로 완료한다. health UP만으로 전체 완료 처리하지 않는다.
 
 현재 상태: 업데이트 절차 코드 준비. 실제 inspect 소속 결과·bindings 확정·update·BuildIt 배포·실계정 QA는 미실행.
+
+## Approved first academies (BuildIt 12 and 20)
+
+The explicitly approved `bindings_json` object `{"bootstrapApproved":[12,20]}`
+selects first-use setup during update. The source query verifies academy owners
+54/TUTOR/modu and 4/ADMIN and reads the current academy names and slugs on the
+server. V5 only adds two external identity mapping tables. No existing migrations
+are edited. Source identity fingerprints prevent silently adopting changed
+identities. Named-lock transactions and unique external identifiers prevent
+duplicate academies/members on retry; no existing records are updated or deleted.
+
+The existing DB/JAR/env are backed up before the additive migration. The S3 DB
+backup is downloaded and hash checked. On failure files are restored; additive
+schema/mapping rows remain preserved for diagnosis and safe idempotent retry.
+No automatic DB rollback or deletion is permitted. Shared key values never enter
+workflow inputs or logs. Three staff bindings are created: modu/12, ADMIN/20,
+and ADMIN/12 for the explicitly approved cross-academy administration.
