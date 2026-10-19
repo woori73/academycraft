@@ -31,6 +31,8 @@ public class NoticeController {
     public ResponseEntity<NoticeDto.CreateResponse> create(
             @PathVariable Long academyId,
             @RequestBody NoticeDto.CreateRequest req) {
+        var auth=com.rea.academy.security.AuthContextHolder.getOrNull();
+        if(auth!=null && !auth.isParent()) req.setAuthorId(auth.principalId());
         return ResponseEntity.ok(noticeService.create(academyId, req));
     }
 

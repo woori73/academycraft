@@ -52,6 +52,17 @@ class BuildItCommonAuthFlowTest {
     assertEquals(200,call(4,"ADMIN","GET","/api/rea/7001/dashboard/stats","").getResponse().getStatus());
     assertEquals(403,call(54,"TUTOR","GET","/api/rea/7002/students","").getResponse().getStatus());
     assertEquals(403,call(81,"TUTOR","POST","/api/rea/7001/classes","{\"name\":\"blocked\",\"teacherId\":9003}").getResponse().getStatus());
+    MvcResult notice=call(54,"TUTOR","POST","/api/rea/7001/notices","{\"title\":\"QA notice\",\"content\":\"isolated\",\"authorId\":9002}");
+    assertEquals(200,notice.getResponse().getStatus(),notice.getResponse().getContentAsString());
+    long noticeId=json.readTree(notice.getResponse().getContentAsString()).path("notice").path("id").asLong();
+    assertTrue(noticeId>0);
+    assertEquals(200,call(54,"TUTOR","PUT","/api/rea/7001/notices/"+noticeId,"{\"title\":\"QA notice updated\"}").getResponse().getStatus());
+    MvcResult conversation=call(54,"TUTOR","POST","/api/rea/7001/consultations","{\"studentId\":"+student+",\"type\":\"NEWS\",\"title\":\"QA consultation\",\"content\":\"isolated\",\"authorMemberId\":9002}");
+    assertEquals(200,conversation.getResponse().getStatus(),conversation.getResponse().getContentAsString());
+    long thread=json.readTree(conversation.getResponse().getContentAsString()).path("consultation").path("id").asLong();
+    assertTrue(thread>0);
+    assertEquals(200,call(54,"TUTOR","POST","/api/rea/7001/consultations/"+thread+"/messages","{\"memberId\":9002,\"content\":\"QA follow up\"}").getResponse().getStatus());
+    assertEquals(200,call(4,"ADMIN","GET","/api/rea/7001/consultations/"+thread,"").getResponse().getStatus());
     assertEquals(0,jdbc.queryForObject("SELECT COUNT(*) FROM rea_members WHERE login_id IS NOT NULL OR password_hash IS NOT NULL",Integer.class));
   }
 }

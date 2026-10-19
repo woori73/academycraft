@@ -22,9 +22,12 @@ class BuildItGatewayFilterTest {
   @BeforeEach void setup() throws Exception {
     var binding=List.of(new BuildItGatewayFilter.Binding(54L,"TUTOR",12L,7L,9L,null),
       new BuildItGatewayFilter.Binding(4L,"ADMIN",12L,7L,10L,null),
+      new BuildItGatewayFilter.Binding(4L,"ADMIN",13L,8L,12L,null),
       new BuildItGatewayFilter.Binding(80L,"STUDENT",12L,7L,null,22L),
       new BuildItGatewayFilter.Binding(81L,"TUTOR",12L,7L,11L,null));
     filter=new BuildItGatewayFilter(json,members,students,academies,SECRET,json.writeValueAsString(binding));
+    when(academies.findById(8L)).thenReturn(Optional.of(ReaAcademy.builder().id(8L).name("second").active(true).build()));
+    when(members.findById(12L)).thenReturn(Optional.of(ReaMember.builder().id(12L).academyId(8L).role(ReaRole.ACADEMY_OWNER).active(true).name("second admin scope").build()));
     when(academies.findById(7L)).thenReturn(Optional.of(ReaAcademy.builder().id(7L).active(true).build()));
     when(members.findById(9L)).thenReturn(Optional.of(ReaMember.builder().id(9L).academyId(7L).role(ReaRole.ACADEMY_OWNER).active(true).name("owner").build()));
     when(members.findById(10L)).thenReturn(Optional.of(ReaMember.builder().id(10L).academyId(7L).role(ReaRole.TEACHER).active(true).name("admin with scoped teacher role").build()));
@@ -44,6 +47,8 @@ class BuildItGatewayFilterTest {
     });assertEquals(status,response.getStatus()); assertNull(AuthContextHolder.getOrNull());
   }
   @Test void moduUsesExistingOwnerOnlyInOwnAcademy() throws Exception { expect(54L,"TUTOR",12L,"GET","/api/rea/7/students",204); expect(54L,"TUTOR",11L,"GET","/api/rea/7/students",403); }
+  @Test void adminSelectsOnlyApprovedAcademies() throws Exception { expect(4L,"ADMIN",null,"GET","/api/rea/8/notices",204); expect(4L,"ADMIN",null,"GET","/api/rea/9/notices",403); expect(54L,"TUTOR",12L,"GET","/api/rea/8/notices",403); }
+  @Test void staffCanUseConsultationsAndNotices() throws Exception { expect(54L,"TUTOR",12L,"POST","/api/rea/7/notices",204);expect(54L,"TUTOR",12L,"POST","/api/rea/7/consultations",204); }
   @Test void adminDoesNotBecomeUnrestrictedOwner() throws Exception { expect(4L,"ADMIN",20L,"GET","/api/rea/7/classes",204); }
   @Test void tutorCannotReadOtherAcademyOrManageAccounts() throws Exception { expect(81L,"TUTOR",null,"GET","/api/rea/8/students",403); expect(81L,"TUTOR",null,"POST","/api/rea/7/members",403); }
   @Test void studentCanOnlyReadOwnStudentAndAttendance() throws Exception { expect(80L,"STUDENT",null,"GET","/api/rea/7/attendance/student/22",204); expect(80L,"STUDENT",null,"GET","/api/rea/7/attendance/student/23",403); expect(80L,"STUDENT",null,"POST","/api/rea/7/attendance/check",403); expect(80L,"STUDENT",null,"GET","/api/rea/7/dashboard/stats",403); }

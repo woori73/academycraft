@@ -22,9 +22,9 @@ const Auth = (() => {
   let commonPending = null;
   function commonLogin() { location.href = '/?login=required&returnUrl=%2Facademycraft'; }
   async function context() {
-    if (!commonPending) commonPending = fetch('/academycraft/api/rea/integration/context', {credentials:'same-origin',cache:'no-store'})
+    if (!commonPending) commonPending = fetch('/academycraft/api/rea/integration/context' + (sessionStorage.getItem('academycraft.academy') ? '?academyId=' + encodeURIComponent(sessionStorage.getItem('academycraft.academy')) : ''), {credentials:'same-origin',cache:'no-store'})
       .then(async res => { if (!res.ok) throw new Error('학원 연결 또는 권한이 없습니다.'); return res.json(); })
-      .then(data => { commonContext=data; return data; }).finally(() => { commonPending=null; });
+      .then(data => { commonContext=data; sessionStorage.setItem('academycraft.academy', String(data.academyId)); return data; }).finally(() => { commonPending=null; });
     return commonPending;
   }
   let accessToken = null;
@@ -74,6 +74,7 @@ const Auth = (() => {
       if (!common) location.href = 'AUTH-01-login.html';
       throw error;
     }
+    if (common && path.startsWith('/api/rea/integration/')) path += (path.includes('?') ? '&' : '?') + 'academyId=' + commonContext.academyId;
     if (common && path.startsWith('/api/rea/')) path = '/academycraft' + path;
     const res = await fetch(path, {
       ...options,

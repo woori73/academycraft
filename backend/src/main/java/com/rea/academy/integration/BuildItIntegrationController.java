@@ -19,10 +19,12 @@ public class BuildItIntegrationController {
   }
 
   @GetMapping("/api/rea/integration/context")
-  public ResponseEntity<Map<String,Object>> context() {
+  public ResponseEntity<Map<String,Object>> context(jakarta.servlet.http.HttpServletRequest request) {
     AuthContext auth=AuthContextHolder.getOrNull();
     if(auth==null) return ResponseEntity.status(401).build();
     Map<String,Object> result=new LinkedHashMap<>();
+    result.put("academyOptions",request.getAttribute("buildit.academyOptions"));
+    result.put("builditRole",request.getAttribute("buildit.role"));
     result.put("academyId",auth.academyId()); result.put("role",auth.role().name());
     result.put("memberId",auth.isParent()?null:auth.principalId());
     result.put("studentId",auth.isParent()?auth.ownStudentId():null);

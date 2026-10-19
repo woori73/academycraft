@@ -34,10 +34,10 @@ public class BuildItGatewayFilter extends OncePerRequestFilter {
       ReaAcademyRepository academies, String secret, String bindingsJson) throws Exception {
     this.json=json; this.members=members; this.students=students; this.academies=academies; this.secret=secret;
     this.bindings=List.of(json.readValue(bindingsJson, Binding[].class));
-    Set<Long> users=new HashSet<>(); Set<Long> localMembers=new HashSet<>(); Set<Long> localStudents=new HashSet<>();
+    Set<String> users=new HashSet<>(); Set<Long> localMembers=new HashSet<>(); Set<Long> localStudents=new HashSet<>();
     for (Binding b:bindings) {
       if (b.userId()==null || b.userId()<=0 || b.builditAcademyId()==null || b.builditAcademyId()<=0
-          || b.academyId()==null || b.academyId()<=0 || !users.add(b.userId())
+          || b.academyId()==null || b.academyId()<=0 || !users.add(b.userId()+":"+("ADMIN".equals(b.role())?b.academyId():"single"))
           || !Set.of("ADMIN","TUTOR","STUDENT").contains(b.role())) throw new IllegalArgumentException("Invalid or ambiguous AcademyCraft binding");
       if (b.role().equals("STUDENT")) {
         if (b.studentId()==null || !localStudents.add(b.studentId()) || b.memberId()!=null) throw new IllegalArgumentException("Invalid student binding");
@@ -65,7 +65,19 @@ public class BuildItGatewayFilter extends OncePerRequestFilter {
       if ((identity.issuedAt()<now-30 || identity.issuedAt()>now+5) || identity.nonce()==null || !identity.nonce().matches("[a-f0-9-]{36}")) { reject(response,401); return; }
       nonces.entrySet().removeIf(e->e.getValue()<now-31);
       if (nonces.size()>10000 || nonces.putIfAbsent(identity.nonce(),identity.issuedAt())!=null) { reject(response,401); return; }
-      Binding binding=bindings.stream().filter(b->b.userId().equals(identity.userId()) && b.role().equals(identity.role())).findFirst().orElse(null);
+      List<Binding> permitted=bindings.stream().filter(b->b.userId().equals(identity.userId()) && b.role().equals(identity.role()))
+          .filter(b->resolve(identity,b)!=null && academies.findById(b.academyId()).map(a->Boolean.TRUE.equals(a.getActive())).orElse(false)).toList();
+      Long selected=null;
+      String[] segments=request.getRequestURI().split("/");
+      if (segments.length>3 && segments[3].matches("[1-9][0-9]*")) selected=Long.valueOf(segments[3]);
+      else if (request.getRequestURI().startsWith("/api/rea/integration/") && request.getParameter("academyId")!=null) selected=Long.valueOf(request.getParameter("academyId"));
+      final Long selection=selected;
+      Binding binding=permitted.stream().filter(b->selection==null || b.academyId().equals(selection)).findFirst().orElse(null);
+      request.setAttribute("buildit.academyOptions",permitted.stream().map(b->{
+        var a=academies.findById(b.academyId()).orElseThrow();
+        return Map.of("id",b.academyId(),"name",a.getName()==null?"학원 "+b.academyId():a.getName());
+      }).toList());
+      request.setAttribute("buildit.role",identity.role());
       if (binding==null || !academies.findById(binding.academyId()).map(a->Boolean.TRUE.equals(a.getActive())).orElse(false)) { reject(response,403); return; }
       AuthContext context=resolve(identity,binding);
       if (context==null) { reject(response,403); return; }
@@ -99,7 +111,7 @@ public class BuildItGatewayFilter extends OncePerRequestFilter {
     if (!path.startsWith("/api/rea/")) return method.equals("GET") && (path.matches("/screens/[A-Za-z0-9_-]+\\.html") || path.matches("/components/[A-Za-z0-9_-]+\\.(js|css)"));
     String base="/api/rea/"+b.academyId();
     if ("STUDENT".equals(b.role())) return method.equals("GET") && (path.equals(base+"/students/"+b.studentId()) || path.equals(base+"/attendance/student/"+b.studentId()));
-    return path.matches(base+"/(students|classes|attendance|dashboard/stats|timetable)(/.*)?");
+    return path.matches(base+"/(students|classes|attendance|dashboard/stats|timetable|consultations|notices)(/.*)?");
   }
 
   public static String sign(String secret,String method,String target,String assertion,byte[] body) throws GeneralSecurityException {
