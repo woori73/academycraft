@@ -49,31 +49,57 @@ def main():
   target='압구정에듀홀릭학원'
   def normalized(value):return re.sub(r'\s+','',value).removesuffix('학원')
   businesses=[];academies=[];links=[]
-  for line in sql(ac,db,'SELECT business_id,HEX(name) FROM easy_businesses WHERE active=1;').splitlines():
-   ident,label=line.split('\t');label=bytes.fromhex(label).decode()
-   if normalized(label)==normalized(target):businesses.append((int(ident),label))
-  for line in sql(ac,db,'SELECT academy_id,HEX(name) FROM academies;').splitlines():
-   ident,label=line.split('\t');label=bytes.fromhex(label).decode()
-   if normalized(label)==normalized(target):academies.append((int(ident),label))
-  if businesses:
-   ids=','.join(str(r[0]) for r in businesses)
-   for line in sql(ac,db,'SELECT business_id,academy_id FROM academy_easy_business_links WHERE business_id IN ('+ids+');').splitlines():
-    bid,aid=map(int,line.split('\t'));links.append((bid,aid))
-  require(len(businesses)<=1 and len(academies)<=1 and len(links)<=1,'Ambiguous BuildIt identity; stopped without selecting or writing')
-  require(not links or (academies and links[0][1]==academies[0][0]),'BuildIt link/name mismatch; private review required')
-  print('Read-only BuildIt business:',businesses or 'none')
-  print('Read-only BuildIt academy:',academies or 'none')
-  print('Read-only BuildIt link:',links or 'none')
-  # AcademyCraft IDs have their own namespace. Record references; never invent an SSO mapping.
-  identity={'academy_name':target,'buildit_business_id':businesses[0][0] if businesses else None,
-            'buildit_academy_id':academies[0][0] if academies else None,
-            'buildit_link_verified':bool(links),'sso_enabled':False}
-  require(sql(own,'academycraft','SELECT (SELECT COUNT(*) FROM rea_academies)+(SELECT COUNT(*) FROM rea_members);')=='0',
-          'Not an empty first installation; no duplicate academy, account, or credential reset performed')
+  for line in sql(ac,db,'SELECT business_id,HEX(name),active FROM easy_businesses;').splitlines():
+   ident,label,active=line.split('\t');label=bytes.fromhex(label).decode()
+   if normalized(label)==normalized(target):
+    print('BuildIt business match:',int(ident),label,'active:',active)
+    if active=='1':businesses.append((int(ident),label))
+  for line in sql(ac,db,'SELECT academy_id,HEX(name),status FROM academies;').splitlines():
+   ident,label,status=line.split('\t');label=bytes.fromhex(label).decode()
+   if normalized(label)==normalized(target):
+    print('BuildIt academy match:',int(ident),label,'status:',status)
+    academies.append((int(ident),label))
+  conditions=[]
+  if businesses:conditions.append('l.business_id IN ('+','.join(str(r[0]) for r in businesses)+')')
+  if academies:conditions.append('l.academy_id IN ('+','.join(str(r[0]) for r in academies)+')')
+  if conditions:
+   raw=sql(ac,db,'SELECT l.business_id,l.academy_id,HEX(b.name),HEX(a.name) FROM academy_easy_business_links l JOIN easy_businesses b ON b.business_id=l.business_id JOIN academies a ON a.academy_id=l.academy_id WHERE '+' OR '.join(conditions)+' ORDER BY l.business_id,l.academy_id;')
+   for line in raw.splitlines():
+    bid,aid,bname,aname=line.split('\t');links.append((int(bid),int(aid),bytes.fromhex(bname).decode(),bytes.fromhex(aname).decode()))
+  print('Read-only BuildIt business candidates (id, original name):',businesses or 'none')
+  print('Read-only BuildIt academy candidates (id, original name):',academies or 'none')
+  print('Read-only links (business_id, academy_id, business name, academy name):',links or 'none')
+  for kind,rows in (('business',businesses),('academy',academies)):
+   for ident,label in rows:print(kind,ident,'exact_name_match:',label==target,'normalized_match:',normalized(label)==normalized(target))
+  counts=sql(own,'academycraft','SELECT (SELECT COUNT(*) FROM rea_academies),(SELECT COUNT(*) FROM rea_members);')
+  print('Read-only AcademyCraft counts (academies, members):',counts)
+  if sys.argv[1:]==['--inspect']:
+   print('INSPECT ONLY: no backup repair, account, academy or DB writes performed.');return
+  independent=sys.argv[1:]==['--independent-eduholic']
+  require(not sys.argv[1:] or independent,'Unknown option; use --inspect or --independent-eduholic')
+  require(counts=='0\t0','Not an empty first installation; no duplicate academy/account/reset performed')
+  if independent:
+   # User-confirmed production homepage; 11 is a retained test academy, never a prerequisite to delete.
+   require(sql(ac,db,"SELECT COUNT(*) FROM academies a JOIN users u ON u.user_id=a.tutor_user_id WHERE a.academy_id=12 AND a.tutor_user_id=54 AND a.handle='eduholic' AND u.login_id='modu';")=='1','Production homepage identity changed; stopped')
+   require(sql(ac,db,"SELECT COUNT(*) FROM easy_businesses WHERE business_id=1 AND code='ACADEMY' AND active=1;")=='1','Academy business identity changed; stopped')
+   identity={'academy_name':target,'buildit_business_id':1,'buildit_homepage_academy_id':12,
+             'buildit_homepage_user_id':54,'buildit_management_academy_id':None,
+             'buildit_link_verified':any(r[:2]==(1,12) for r in links),
+             'excluded_test_academy_id':11,'sso_enabled':False}
+  else:
+   require(len(businesses)<=1 and len(academies)<=1 and len(links)<=1,'Ambiguous BuildIt identity; review candidate IDs above; no account created')
+   require(not links or (businesses and academies and links[0][:2]==(businesses[0][0],academies[0][0])),'BuildIt link/name mismatch; private review required')
+   identity={'academy_name':target,'buildit_business_id':businesses[0][0] if businesses else None,
+             'buildit_academy_id':academies[0][0] if academies else None,
+             'buildit_link_verified':bool(links),'sso_enabled':False}
   require(not Path('/etc/academycraft/bootstrap-identity.json').exists(),'Bootstrap identity already exists; review privately')
   academy_name=target
   print('AcademyCraft first academy:',academy_name,'(independent DB; BuildIt unchanged)')
+  backup=subprocess.run(['/etc/cron.daily/academycraft-backup'],capture_output=True,text=True)
+  require(backup.returncode==0,'Backup failed; initialization stopped before password/account creation. No backup output or credentials printed.')
+  print('PASS: pre-registration backup completed.')
   login=input('New owner login ID: ').strip();name=input('Owner display name: ').strip()
+  require(login not in ('admin-f2r','modu','edu-holic'),'Use a separate AcademyCraft owner login ID')
   require(re.fullmatch(r'[A-Za-z0-9_.@-]{3,50}',login) and 1<=len(name)<=50,'Invalid login/display name')
   require(sql(own,'academycraft','SELECT COUNT(*) FROM rea_members WHERE login_id='+lit(login)+';')=='0','Login ID already exists')
   password=getpass.getpass('Initial password (hidden, at least 12 characters): ')
@@ -107,3 +133,4 @@ DO RELEASE_LOCK('academycraft.initial-owner');"""
 if __name__=='__main__':
  try:main()
  except (KeyError,ValueError,OSError,EOFError):raise SystemExit('Initialization stopped. Check prerequisites privately; credentials not printed.')
+

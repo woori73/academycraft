@@ -135,3 +135,54 @@ DB 명령은 mysql stdin, 임시 cnf는700 디렉터리 내600 파일이며 종�
 쓰기 연결은 academycraft 전용 계정/스키마로 한정한다. 비밀번호·hash·auth_key 출력 없음.
 성공 여부와 비밀이 아닌 조회 결과만 Work에 전달한다. 초기 비밀번호는 전달하지 않는다.
 실제 웹 로그인과 학생·반·출결 확인 전에는 BuildIt 카드/위젯 연결을 완료로 처리하지 않는다.
+
+
+
+## 최초 등록 실패 진단 및 백업 수정 (2026-10-19)
+
+배포 EC2의 개인 SSM 터미널에서 검토된 동일 SHA의 repair-backup.py를 sudo로 실행한다.
+기존 전용 백업 cron의 목적지 검증 후 원본을 /etc/academycraft/academycraft-backup.before-* (600)에
+보존하고 cron만 교체한다. --no-tablespaces로 PROCESS 권한을 요구하지 않으며 DB GRANT는 하지 않는다.
+명시적인 파이프라인 실패 검사, 고유 파일명, 부분 덤프 제거, 업로드 실패 종료를 적용한다.
+원본 백업을 되돌릴 때에는 해당 before 파일을 cron 경로에 복사하고 chmod700한다.
+복원한 구형 cron에는 최초 등록을 실행하지 말고 오류를 먼저 해결한다.
+
+그다음 initialize-owner.py --inspect는 읽기 전용으로 다음만 표시한다:
+정규화된 이름이 일치한 사업체의 원래 이름/ID/active, 학원의 원래 이름/ID/status,
+양방향 연결 및 상대편 이름, exact-name 일치 여부, AcademyCraft 학원·회원 수.
+동명·정규화 충돌 또는 다른 학원 연결을 확인하기 전에는 ID를 자동 선택하지 않는다.
+출력에 인증정보·학생 정보는 포함하지 않는다. 조회 결과를 검토하기 전에는 원장 등록을 재시도하지 않는다.
+계정 생성 모드는 자체적으로 백업을 다시 실행하며, 비제로 종료면 비밀번호 입력 전에 중단한다.
+--inspect는 백업이나 DB 쓰기를 하지 않는다. BuildIt에는 SELECT만 실행한다.
+
+변경 검증: python3 docs/deployment-new-aws/test_bootstrap.py
+기존 378개 앱 테스트를 반복하지 않도록 이번 PR의 자동 전체 CI는 [skip ci]로 생략한다.
+대신 백업 실패/성공과 업로드 차단, 이전 백업 보존, 조회 전용, 중복·기존 데이터 차단,
+초기화 내부 백업 실패 시 비밀번호 입력 차단만 검증한다. 운영 결과는 별도로 확인해야 한다.
+
+
+## ADMIN·modu 및 학원 11·12 조사
+
+운영자가 확인한 업무: ADMIN=압구정에듀홀릭학원 운영 관리자, modu=에듀홀릭학원 홈페이지 운영.
+Easy에는 학원·출판사 두 사업체가 있다. 이름만으로 학원11/12 또는 사업체를 선택하지 않는다.
+inspect-operating-identity.py는 동일 디렉터리의 initialize-owner.py 도우미를 사용하며 모든 DB 조회를
+START TRANSACTION READ ONLY / ROLLBACK으로 감싼다. 운영 EC2 개인 SSM에서 sudo로 실행한다.
+ADMIN/modu의 user_id/login_id/role, 학원 owner/slug/handle/status, 사업체 code와 연결,
+11/12의 academy_id 참조 테이블별 집계 및 원장별 학생 연결 집계, AcademyCraft 기존 데이터 수만 표시한다.
+비밀번호·해시·연락처·학생 행은 조회하지 않는다. 계정/권한/홈페이지/장부·출판사/DB 변경 없음.
+조회에서 확인된 역할을 먼저 보고하고 최초 원장 생성 명령은 그 후 제공한다.
+AcademyCraft 원장은 별도 login_id와 별도 자격증명을 사용한다. 향후 SSO 검토용으로
+BuildIt user_id, 홈페이지용 academy_id, 학원 운영용 academy_id, 학원 business_id,
+AcademyCraft academy_id/member_id를 역할별로 구분해 관리해야 하며, 동일 이름/번호를 동일 계정으로 간주하지 않는다.
+현재 참조 기록 파일은 자동 SSO나 접근권한을 부여하지 않는다. 초기화의 모호성 차단은 유지한다.
+
+
+## 독립 최초 등록 — 학원11 삭제와 분리
+
+--independent-eduholic 모드는 사용자가 확인한 홈페이지12/user54/modu/handle eduholic과
+사업체1/code ACADEMY/active를 SELECT로 대조한다. 테스트 학원11의 존재는 차단 조건이 아니다.
+실제 학원 운영용 BuildIt academy_id는 미확정이므로 홈페이지용 식별자와 별도(null)로 기록한다.
+기존 LINKS가 없으면 buildit_link_verified=false를 기록하며 BuildIt에 연결 행을 만들지 않는다.
+ADMIN의 학원20 초안과 users4·53·54, 출판사 사업체2를 변경하지 않는다.
+AcademyCraft 자체 학원 ID와 별도 원장 login을 발급하고 SSO는 활성화하지 않는다.
+admin-f2r/modu/edu-holic 로그인명을 재사용하지 않는다. 기존 빈 DB·백업·숨김 비밀번호 검사 유지.

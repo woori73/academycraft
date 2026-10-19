@@ -584,16 +584,20 @@ jobs:
           cat > /etc/cron.daily/academycraft-backup <<EOF
           #!/bin/bash
           set -euo pipefail
-          DATE=\$(date +%F)
+          DATE=\$(date +%F-%H%M%S)-\$\$
           BACKUP_DIR=/backup/academycraft
           S3_BUCKET="$BACKUP_BUCKET"
           set -a; . /etc/academycraft/env; set +a
           # MYSQL_PWD 환경변수로 비밀번호 전달 (명령행 노출 방지)
-          MYSQL_PWD="\$DB_PASSWORD" mysqldump -h "$DB_HOST" -u "\$DB_USERNAME" \\
-            --single-transaction --routines academycraft \\
-            | gzip > "\$BACKUP_DIR/academycraft-\$DATE.sql.gz"
+          if ! MYSQL_PWD="\$DB_PASSWORD" mysqldump -h "$DB_HOST" -u "\$DB_USERNAME" \\
+            --single-transaction --no-tablespaces --routines academycraft \\
+            | gzip > "\$BACKUP_DIR/academycraft-\$DATE.sql.gz"; then
+            rm -f "\$BACKUP_DIR/academycraft-\$DATE.sql.gz"
+            echo "AcademyCraft dump failed; backup aborted." >&2
+            exit 1
+          fi
           unset MYSQL_PWD
-          gzip -t "\$BACKUP_DIR/academycraft-\$DATE.sql.gz"
+          gzip -t "\$BACKUP_DIR/academycraft-\$DATE.sql.gz" || exit 1
           if aws s3 cp "\$BACKUP_DIR/academycraft-\$DATE.sql.gz" "\$S3_BUCKET/"; then
             echo "\$(date -Iseconds) BACKUP OK: academycraft-\$DATE.sql.gz" >> /var/log/academycraft/backup.log
           else
@@ -843,3 +847,4 @@ jobs:
           배포 스크립트는 시작 전 f2r-app·buildit-wiki 정상을 확인했습니다.
           이상 발생 시 `sudo systemctl stop academycraft` 후 보고하세요.
           EOF
+
