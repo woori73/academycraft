@@ -77,7 +77,7 @@ AcademyCraft 스키마 생성 후 rea_academies(id,name), rea_members의 동일 
 
 실제 학원 연결이 확인되면 미확정 로그인 ID/원장 표시 이름만 사용자에게 확인한다.
 최초 자격은 별도 검토한 오프라인 관리자 절차로 설정하고 BCrypt hash만 전용 DB에 저장한다.
-현재는 그 안전한 최초 원장 설정 실행 도구가 미구현이다. 임시 공개 API, dev profile,
+initialize-owner.py가 관리자 대화형 초기화 도구다. 실제 서버 실행과 JAR 내 BCrypt 의존성 검증은 배포 이후 수행한다. 임시 공개 API, dev profile,
 X-Auth-Key fallback, 자동 계정 생성으로 우회하지 않는다.
 초기 비밀번호는 관리자 개인 터미널의 숨김 입력으로만 받고 argv/env/CI/저장소/채팅에 남기지 않는다.
 
@@ -115,3 +115,16 @@ rollback evidence는 관리자 현재 디렉터리의 academycraft-routing-befor
 delete-rule → revoke-security-group-ingress → deregister-targets → delete-target-group 순으로
 관리자가 검토해 되돌린다. 기존 default rule/기존 SG rule/인증서/DB는 변경·삭제하지 않는다.
 기존 TG를 재사용한 경우 그 TG는 삭제하지 않는다. targets 등록은 위 EC2:8082만 허용한다.
+
+## 최초 원장 대화형 초기화
+
+기존 신규 EC2의 개인 관리자 SSM 터미널에서 다운로드한 검토 SHA의 initialize-owner.py를
+`sudo python3 initialize-owner.py`로 실행한다. CI/SendCommand/파이프 실행은 거부한다.
+BuildIt DB에는 SELECT만 실행해 실제 business_id·academy_id·명칭을 나열한다.
+관리자가 기존 매핑을 선택하고 로그인 ID·표시 이름·숨김 비밀번호를 직접 입력한다.
+기존 원장 또는 중복 로그인 ID가 있으면 중단한다. 임의 학원 ID·자동 계정 생성·자격 초기화 없음.
+JAR의 기존 BCrypt encoder(strength12)를 사용하며 비밀번호는 Java stdin 파이프로만 전달한다.
+DB 명령은 mysql stdin, 임시 cnf는700 디렉터리 내600 파일로 생성 후 제거한다.
+쓰기 연결은 academycraft 전용 계정/스키마로 한정한다. 비밀번호·hash·auth_key 출력 없음.
+개인 터미널의 성공 여부만 Work에 알려주며 비밀번호를 채팅에 전달하지 않는다.
+실제 웹 로그인은 사용자의 안전한 로그인 입력/세션이 준비되어야 검증할 수 있다.
