@@ -159,3 +159,19 @@ DB 명령은 mysql stdin, 임시 cnf는700 디렉터리 내600 파일이며 종�
 기존 378개 앱 테스트를 반복하지 않도록 이번 PR의 자동 전체 CI는 [skip ci]로 생략한다.
 대신 백업 실패/성공과 업로드 차단, 이전 백업 보존, 조회 전용, 중복·기존 데이터 차단,
 초기화 내부 백업 실패 시 비밀번호 입력 차단만 검증한다. 운영 결과는 별도로 확인해야 한다.
+
+
+## ADMIN·modu 및 학원 11·12 조사
+
+운영자가 확인한 업무: ADMIN=압구정에듀홀릭학원 운영 관리자, modu=에듀홀릭학원 홈페이지 운영.
+Easy에는 학원·출판사 두 사업체가 있다. 이름만으로 학원11/12 또는 사업체를 선택하지 않는다.
+inspect-operating-identity.py는 동일 디렉터리의 initialize-owner.py 도우미를 사용하며 모든 DB 조회를
+START TRANSACTION READ ONLY / ROLLBACK으로 감싼다. 운영 EC2 개인 SSM에서 sudo로 실행한다.
+ADMIN/modu의 user_id/login_id/role, 학원 owner/slug/handle/status, 사업체 code와 연결,
+11/12의 academy_id 참조 테이블별 집계 및 원장별 학생 연결 집계, AcademyCraft 기존 데이터 수만 표시한다.
+비밀번호·해시·연락처·학생 행은 조회하지 않는다. 계정/권한/홈페이지/장부·출판사/DB 변경 없음.
+조회에서 확인된 역할을 먼저 보고하고 최초 원장 생성 명령은 그 후 제공한다.
+AcademyCraft 원장은 별도 login_id와 별도 자격증명을 사용한다. 향후 SSO 검토용으로
+BuildIt user_id, 홈페이지용 academy_id, 학원 운영용 academy_id, 학원 business_id,
+AcademyCraft academy_id/member_id를 역할별로 구분해 관리해야 하며, 동일 이름/번호를 동일 계정으로 간주하지 않는다.
+현재 참조 기록 파일은 자동 SSO나 접근권한을 부여하지 않는다. 초기화의 모호성 차단은 유지한다.
