@@ -45,17 +45,34 @@ def main():
   tmp=Path(td);ac=tmp/'admin.cnf';own=tmp/'app.cnf'
   cnf(ac,m[1],admin.get('DB_USER') or admin.get('DB_USERNAME',''),admin['DB_PASSWORD'])
   cnf(own,m[1],app['DB_USERNAME'],app['DB_PASSWORD'])
-  # BuildIt connection is SELECT-only in this utility; never write to it.
-  raw=sql(ac,db,'SELECT b.business_id,HEX(b.name),l.academy_id,HEX(a.name) FROM easy_businesses b JOIN academy_easy_business_links l ON l.business_id=b.business_id JOIN academies a ON a.academy_id=l.academy_id WHERE b.active=1 ORDER BY b.business_id,l.academy_id LIMIT 100;')
-  candidates=[]
-  for line in raw.splitlines():
-   bid,bname,aid,aname=line.split('\t');row=(int(bid),bytes.fromhex(bname).decode(),int(aid),bytes.fromhex(aname).decode());candidates.append(row)
-   print('business_id:',row[0],'business:',row[1],'academy_id:',row[2],'academy:',row[3])
-  require(candidates,'No existing BuildIt academy/business mapping; stopped without guessing an ID')
-  business=int(input('Existing business_id: '));academy=int(input('Existing academy_id: '))
-  matches=[r for r in candidates if r[0]==business and r[2]==academy];require(len(matches)==1,'Mapping not found')
-  academy_name=matches[0][3]
-  require(sql(own,'academycraft',f"SELECT COUNT(*) FROM rea_members WHERE academy_id={academy} AND role='ACADEMY_OWNER';")=='0','Existing owner found; no duplicate or credential reset performed')
+  # Read each source independently: missing cross-service links are valid on first install.
+  target='압구정에듀홀릭학원'
+  def normalized(value):return re.sub(r'\s+','',value).removesuffix('학원')
+  businesses=[];academies=[];links=[]
+  for line in sql(ac,db,'SELECT business_id,HEX(name) FROM easy_businesses WHERE active=1;').splitlines():
+   ident,label=line.split('\t');label=bytes.fromhex(label).decode()
+   if normalized(label)==normalized(target):businesses.append((int(ident),label))
+  for line in sql(ac,db,'SELECT academy_id,HEX(name) FROM academies;').splitlines():
+   ident,label=line.split('\t');label=bytes.fromhex(label).decode()
+   if normalized(label)==normalized(target):academies.append((int(ident),label))
+  if businesses:
+   ids=','.join(str(r[0]) for r in businesses)
+   for line in sql(ac,db,'SELECT business_id,academy_id FROM academy_easy_business_links WHERE business_id IN ('+ids+');').splitlines():
+    bid,aid=map(int,line.split('\t'));links.append((bid,aid))
+  require(len(businesses)<=1 and len(academies)<=1 and len(links)<=1,'Ambiguous BuildIt identity; stopped without selecting or writing')
+  require(not links or (academies and links[0][1]==academies[0][0]),'BuildIt link/name mismatch; private review required')
+  print('Read-only BuildIt business:',businesses or 'none')
+  print('Read-only BuildIt academy:',academies or 'none')
+  print('Read-only BuildIt link:',links or 'none')
+  # AcademyCraft IDs have their own namespace. Record references; never invent an SSO mapping.
+  identity={'academy_name':target,'buildit_business_id':businesses[0][0] if businesses else None,
+            'buildit_academy_id':academies[0][0] if academies else None,
+            'buildit_link_verified':bool(links),'sso_enabled':False}
+  require(sql(own,'academycraft','SELECT (SELECT COUNT(*) FROM rea_academies)+(SELECT COUNT(*) FROM rea_members);')=='0',
+          'Not an empty first installation; no duplicate academy, account, or credential reset performed')
+  require(not Path('/etc/academycraft/bootstrap-identity.json').exists(),'Bootstrap identity already exists; review privately')
+  academy_name=target
+  print('AcademyCraft first academy:',academy_name,'(independent DB; BuildIt unchanged)')
   login=input('New owner login ID: ').strip();name=input('Owner display name: ').strip()
   require(re.fullmatch(r'[A-Za-z0-9_.@-]{3,50}',login) and 1<=len(name)<=50,'Invalid login/display name')
   require(sql(own,'academycraft','SELECT COUNT(*) FROM rea_members WHERE login_id='+lit(login)+';')=='0','Login ID already exists')
@@ -68,17 +85,24 @@ def main():
   key=secrets.token_hex(16)
   query=f"""START TRANSACTION;
 SET @got=GET_LOCK('academycraft.initial-owner',5);
+SET @empty=((SELECT COUNT(*) FROM rea_academies)+(SELECT COUNT(*) FROM rea_members)=0);
+SET @candidate=(SELECT COALESCE(MAX(id),0)+1 FROM rea_academies);
 INSERT INTO rea_academies(id,name,active,created_at,updated_at)
-SELECT {academy},{lit(academy_name)},1,NOW(6),NOW(6) WHERE @got=1 AND NOT EXISTS(SELECT 1 FROM rea_academies WHERE id={academy});
+SELECT @candidate,{lit(academy_name)},1,NOW(6),NOW(6) WHERE @got=1 AND @empty;
+SET @academy=IF(ROW_COUNT()=1,@candidate,NULL);
 INSERT INTO rea_members(academy_id,role,name,auth_key,active,created_at,updated_at,login_id,password_hash,failed_login_attempts)
-SELECT {academy},'ACADEMY_OWNER',{lit(name)},{lit(key)},1,NOW(6),NOW(6),{lit(login)},{lit(hashed)},0
-WHERE @got=1 AND EXISTS(SELECT 1 FROM rea_academies WHERE id={academy} AND name={lit(academy_name)} AND active=1)
-AND NOT EXISTS(SELECT 1 FROM rea_members WHERE academy_id={academy} AND role='ACADEMY_OWNER');
-SELECT ROW_COUNT();
+SELECT @academy,'ACADEMY_OWNER',{lit(name)},{lit(key)},1,NOW(6),NOW(6),{lit(login)},{lit(hashed)},0
+WHERE @academy IS NOT NULL;
+SELECT ROW_COUNT(),@academy;
 COMMIT;
 DO RELEASE_LOCK('academycraft.initial-owner');"""
   result=sql(own,'academycraft',query);hashed=None;query=None
-  require(result=='1','Owner was not inserted. Review AcademyCraft state privately; do not auto-retry.')
+  fields=result.split('\t')
+  require(len(fields)==2 and fields[0]=='1' and fields[1].isdigit(),'Owner was not inserted. Review AcademyCraft state privately; do not auto-retry.')
+  identity['academycraft_academy_id']=int(fields[1])
+  record=Path('/etc/academycraft/bootstrap-identity.json')
+  with record.open('x') as out:json.dump(identity,out,ensure_ascii=False,indent=2)
+  record.chmod(0o600)
   print('PASS: initial owner created. Password/hash/key not printed. BuildIt database unchanged.')
 if __name__=='__main__':
  try:main()

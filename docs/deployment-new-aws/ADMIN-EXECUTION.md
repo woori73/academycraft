@@ -120,11 +120,18 @@ delete-rule → revoke-security-group-ingress → deregister-targets → delete-
 
 기존 신규 EC2의 개인 관리자 SSM 터미널에서 다운로드한 검토 SHA의 initialize-owner.py를
 `sudo python3 initialize-owner.py`로 실행한다. CI/SendCommand/파이프 실행은 거부한다.
-BuildIt DB에는 SELECT만 실행해 실제 business_id·academy_id·명칭을 나열한다.
-관리자가 기존 매핑을 선택하고 로그인 ID·표시 이름·숨김 비밀번호를 직접 입력한다.
-기존 원장 또는 중복 로그인 ID가 있으면 중단한다. 임의 학원 ID·자동 계정 생성·자격 초기화 없음.
-JAR의 기존 BCrypt encoder(strength12)를 사용하며 비밀번호는 Java stdin 파이프로만 전달한다.
-DB 명령은 mysql stdin, 임시 cnf는700 디렉터리 내600 파일로 생성 후 제거한다.
+BuildIt DB에는 SELECT만 실행해 압구정에듀홀릭학원(공백 및 학원 접미사 정규화)의
+사업체·학원·연결을 각각 확인한다. 연결 부재는 신규 설치에서 정상이다.
+동명 중복 또는 연결/명칭 불일치, 조회 실패는 중단하며 신규 등록으로 간주하지 않는다.
+BuildIt 레코드와 계정은 생성·변경하지 않는다. 기존 식별자는 root600
+/etc/academycraft/bootstrap-identity.json 참조 기록에 보존한다. 기존 연결은 검증하여 재사용하며,
+연결이 없는 경우에는 존재한다고 가정하지 않는다. SSO와 통합 인증은 활성화하지 않는다.
+AcademyCraft 학원·회원 테이블이 모두 비어 있을 때만 잠금 안에서 자체 MAX(id)+1 학원 ID를 명시 발급하여
+압구정에듀홀릭학원과 원장을 한 트랜잭션에서 생성한다. 두 서비스의 학원 ID는 별도 공간이다.
+기존 AcademyCraft 학원/회원이 하나라도 있으면 중단한다. 자동 재실행·비밀번호 재설정 없음.
+관리자가 개인 터미널에서 로그인 ID·표시 이름·숨김 비밀번호를 입력하고 CREATE로 확정한다.
+JAR의 BCrypt encoder(strength12)를 사용하며 비밀번호는 Java stdin으로만 전달한다.
+DB 명령은 mysql stdin, 임시 cnf는700 디렉터리 내600 파일이며 종료 시 제거한다.
 쓰기 연결은 academycraft 전용 계정/스키마로 한정한다. 비밀번호·hash·auth_key 출력 없음.
-개인 터미널의 성공 여부만 Work에 알려주며 비밀번호를 채팅에 전달하지 않는다.
-실제 웹 로그인은 사용자의 안전한 로그인 입력/세션이 준비되어야 검증할 수 있다.
+성공 여부와 비밀이 아닌 조회 결과만 Work에 전달한다. 초기 비밀번호는 전달하지 않는다.
+실제 웹 로그인과 학생·반·출결 확인 전에는 BuildIt 카드/위젯 연결을 완료로 처리하지 않는다.
