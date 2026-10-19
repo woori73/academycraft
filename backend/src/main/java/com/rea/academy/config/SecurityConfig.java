@@ -40,6 +40,23 @@ import java.nio.charset.StandardCharsets;
 public class SecurityConfig {
 
     @Bean
+    public com.rea.academy.integration.BuildItGatewayFilter buildItGatewayFilter(
+            com.fasterxml.jackson.databind.ObjectMapper json, ReaMemberRepository members,
+            ReaStudentRepository students, com.rea.academy.domain.admin.ReaAcademyRepository academies,
+            @org.springframework.beans.factory.annotation.Value("${academycraft.gateway-secret:}") String secret,
+            @org.springframework.beans.factory.annotation.Value("${academycraft.buildit-bindings:[]}") String bindings) throws Exception {
+        return new com.rea.academy.integration.BuildItGatewayFilter(json,members,students,academies,secret,bindings);
+    }
+
+    @Bean
+    public FilterRegistrationBean<com.rea.academy.integration.BuildItGatewayFilter> buildItFilterRegistration(
+            com.rea.academy.integration.BuildItGatewayFilter filter) {
+        FilterRegistrationBean<com.rea.academy.integration.BuildItGatewayFilter> registration = new FilterRegistrationBean<>(filter);
+        registration.setEnabled(false); return registration;
+    }
+
+
+    @Bean
     public JwtAuthenticationFilter jwtAuthenticationFilter(
             JwtTokenProvider tokenProvider,
             ReaMemberRepository memberRepository) {
@@ -78,6 +95,7 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http,
                                            JwtAuthenticationFilter jwtAuthenticationFilter,
+                                           com.rea.academy.integration.BuildItGatewayFilter buildItGatewayFilter,
                                            ObjectProvider<AuthKeyFilter> authKeyFilterProvider,
                                            AuthenticationEntryPoint entryPoint)
             throws Exception {
@@ -90,8 +108,9 @@ public class SecurityConfig {
                         .requestMatchers("/api/rea/auth/**").permitAll()
                         .requestMatchers("/api/rea/**").authenticated()
                         .anyRequest().permitAll())
-                .addFilterBefore(jwtAuthenticationFilter,
-                        UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(buildItGatewayFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(jwtAuthenticationFilter, com.rea.academy.integration.BuildItGatewayFilter.class)
+                ;
         // 개발 환경에서만 X-Auth-Key 폴백 필터 추가 (JWT 필터 뒤)
         authKeyFilterProvider.ifAvailable(authKeyFilter ->
                 http.addFilterAfter(authKeyFilter, JwtAuthenticationFilter.class));

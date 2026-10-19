@@ -15,6 +15,7 @@
   }
 
   function loginPage() {
+    if(window.ACADEMYCRAFT_COMMON_AUTH) return '/?login=required&returnUrl=%2Facademycraft';
     return (typeof window.REA_LOGIN_PAGE === 'string' && window.REA_LOGIN_PAGE)
       ? window.REA_LOGIN_PAGE
       : 'AUTH-01-login.html';
@@ -31,7 +32,7 @@
     // 기존 업무 API와 JWT 헬퍼를 연결한다. 운영 인증키 폴백은 사용하지 않는다.
     var resolved;
     try { resolved = await Auth.academyPath(path); }
-    catch (error) { location.href = 'AUTH-01-login.html'; throw error; }
+    catch (error) { if (!window.ACADEMYCRAFT_COMMON_AUTH) location.href = 'AUTH-01-login.html'; throw error; }
     var res = await Auth.api(apiBase() + resolved, opts);
 
     if (res.status === 401) {

@@ -17,11 +17,22 @@
  *   </script>
  */
 const Auth = (() => {
+  const common = window.ACADEMYCRAFT_COMMON_AUTH === true;
+  let commonContext = null;
+  let commonPending = null;
+  function commonLogin() { location.href = '/?login=required&returnUrl=%2Facademycraft'; }
+  async function context() {
+    if (!commonPending) commonPending = fetch('/academycraft/api/rea/integration/context', {credentials:'same-origin',cache:'no-store'})
+      .then(async res => { if (!res.ok) throw new Error('학원 연결 또는 권한이 없습니다.'); return res.json(); })
+      .then(data => { commonContext=data; return data; }).finally(() => { commonPending=null; });
+    return commonPending;
+  }
   let accessToken = null;
   let refreshPending = null;
   let tokenExpiry = 0; // 만료 시각 (ms)
 
   async function login(loginId, password) {
+    if (common) { commonLogin(); return; }
     const res = await fetch('/api/rea/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -39,6 +50,7 @@ const Auth = (() => {
   }
 
   async function refresh() {
+    if (common) { await context(); return; }
     const res = await fetch('/api/rea/auth/refresh', {
       method: 'POST',
       credentials: 'same-origin',
@@ -50,6 +62,7 @@ const Auth = (() => {
   }
 
   async function ensureToken() {
+    if (common) { if (!commonContext) await context(); return; }
     if (!accessToken || Date.now() >= tokenExpiry) {
       if (!refreshPending) refreshPending = refresh().finally(() => { refreshPending = null; });
       await refreshPending; // 동시 화면 요청은 같은 갱신을 기다림
@@ -58,43 +71,45 @@ const Auth = (() => {
 
   async function api(path, options = {}) {
     try { await ensureToken(); } catch (error) {
-      location.href = 'AUTH-01-login.html';
+      if (!common) location.href = 'AUTH-01-login.html';
       throw error;
     }
+    if (common && path.startsWith('/api/rea/')) path = '/academycraft' + path;
     const res = await fetch(path, {
       ...options,
       headers: {
         ...(options.headers || {}),
-        'Authorization': 'Bearer ' + accessToken,
+        ...(!common ? {'Authorization': 'Bearer ' + accessToken} : {}),
         'Content-Type': 'application/json',
       },
       credentials: 'same-origin',
     });
     if (res.status === 401) {
       // 토큰 무효 → 로그인 페이지로
-      location.href = 'AUTH-01-login.html';
+      if (common) commonLogin(); else location.href = 'AUTH-01-login.html';
       throw new Error('인증이 필요합니다.');
     }
     return res;
   }
 
   async function logout() {
+    if (common) { location.href = "/dashboard"; return; }
     try {
       await fetch('/api/rea/auth/logout', { method: 'POST', credentials: 'same-origin' });
     } finally {
       accessToken = null;
-      location.href = 'AUTH-01-login.html';
+      if (common) commonLogin(); else location.href = 'AUTH-01-login.html';
     }
   }
 
   async function academyPath(path) {
     await ensureToken();
     // 화면의 학원 경로만 결정한다. 권한 판단은 서버의 JWT·학원 검증이 담당한다.
-    const payload = JSON.parse(atob(accessToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    const payload = common ? commonContext : JSON.parse(atob(accessToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
     const academyId = Number(payload.academyId);
     if (!Number.isSafeInteger(academyId) || academyId <= 0) throw new Error('학원 정보가 없습니다.');
     return path.replace(/^\/@academy(?=\/|$)/, '/' + academyId);
   }
 
-  return { login, refresh, api, logout, academyPath };
+  return { login, refresh, api, logout, academyPath, context };
 })();
