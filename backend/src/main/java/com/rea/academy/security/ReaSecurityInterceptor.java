@@ -32,6 +32,7 @@ public class ReaSecurityInterceptor implements HandlerInterceptor {
             return true; // 공개 경로 (key-login 등)
         }
 
+        if ("GET".equals(request.getMethod()) && "/api/rea/integration/context".equals(request.getRequestURI())) return true;
         // 1. 테넌트 격리: URL {academyId} vs 인증 사용자의 academyId
         if (handler instanceof HandlerMethod) {
             Map<String, String> vars = (Map<String, String>) request

@@ -33,6 +33,8 @@ public class ConsultationController {
     public ResponseEntity<ConsultationDto.CreateResponse> create(
             @PathVariable Long academyId,
             @RequestBody ConsultationDto.CreateRequest req) {
+        var auth=com.rea.academy.security.AuthContextHolder.getOrNull();
+        if(auth!=null && !auth.isParent()) req.setAuthorMemberId(auth.principalId());
         return ResponseEntity.ok(consultationService.create(academyId, req));
     }
 
@@ -85,6 +87,8 @@ public class ConsultationController {
             @PathVariable Long academyId,
             @PathVariable Long id,
             @RequestBody ConsultationDto.MessageRequest req) {
+        var auth=com.rea.academy.security.AuthContextHolder.getOrNull();
+        if(auth!=null && !auth.isParent()) {req.setMemberId(auth.principalId());req.setStudentId(null);req.setAuthKey(null);}
         return ResponseEntity.ok(consultationService.addMessage(academyId, id, req));
     }
 
@@ -99,6 +103,8 @@ public class ConsultationController {
             @PathVariable Long academyId,
             @PathVariable Long id,
             @RequestBody ConsultationDto.CloseRequest req) {
+        var auth=com.rea.academy.security.AuthContextHolder.getOrNull();
+        if(auth!=null && !auth.isParent()) {req.setMemberId(auth.principalId());req.setStudentId(null);req.setAuthKey(null);}
         return ResponseEntity.ok(consultationService.close(academyId, id, req));
     }
 
@@ -114,6 +120,8 @@ public class ConsultationController {
             @PathVariable Long id,
             @PathVariable Long messageId,
             @RequestBody ConsultationDto.ReadRequest req) {
+        var auth=com.rea.academy.security.AuthContextHolder.getOrNull();
+        if(auth!=null && !auth.isParent()) {req.setMemberId(auth.principalId());req.setStudentId(null);req.setAuthKey(null);}
         return ResponseEntity.ok(
                 consultationService.markMessageRead(academyId, id, messageId, req));
     }

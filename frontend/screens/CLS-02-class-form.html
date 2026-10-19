@@ -103,7 +103,7 @@ const classId = params.get('id');  // 있으면 수정 모드
 
 async function loadTeachers(selectedId) {
   // 담당 강사: TEACHER 또는 ACADEMY_OWNER
-  const res = await apiGet(`/@academy/members`);
+  const res = await apiGet(window.ACADEMYCRAFT_COMMON_AUTH ? `/integration/teachers` : `/@academy/members`);
   const members = await res.json();
   const teachers = members.filter(m => m.role === 'TEACHER' || m.role === 'ACADEMY_OWNER');
   const sel = document.getElementById('f-teacher');
