@@ -1,0 +1,88 @@
+name: Diagnose AcademyCraft (read-only, manual)
+
+# 신규 AWS 425805163960 전용 읽기 전용 점검. 구 계정·BuildIt DB·서비스에는 접근하지 않는다.
+# - 점검 종류는 ops/diagnose-readonly.sh 에 고정(notice-census, timezone). 임의 명령·SQL 입력 불가.
+# - DB는 READ ONLY 트랜잭션 + SELECT 집계만. 개인정보·비밀값 출력 없음(건수·시각 분포·설정값만).
+# - 배포·재시작·파일 쓰기·DB 쓰기 없음. production 환경 승인(woori73) 후에만 실행된다.
+# - 출력은 Actions 로그에만 남는다.
+
+on:
+  workflow_dispatch:
+    inputs:
+      kind:
+        description: '점검 종류 (코드 고정)'
+        required: true
+        default: timezone
+        type: choice
+        options: [timezone, notice-census]
+      confirm:
+        description: '읽기 전용 점검 확인 문구. 정확히 READONLY 를 입력하세요'
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: academycraft-diagnose
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-northeast-2
+  EC2_INSTANCE_ID: i-0414de33d2803c723
+  DEPLOY_ROLE_ARN: arn:aws:iam::425805163960:role/github-actions-academycraft-deploy
+
+jobs:
+  diagnose:
+    name: 읽기 전용 점검 (${{ inputs.kind }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    steps:
+      - name: 확인 문구
+        shell: bash
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          [ "$CONFIRM" = READONLY ] || { echo "::error::확인 문구가 일치하지 않습니다."; exit 1; }
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: AWS 인증 (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: 신규 AWS 계정 강제 확인
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$(aws sts get-caller-identity --query Account --output text)" = "425805163960" ]
+
+      - name: 읽기 전용 점검 실행 (SSM)
+        shell: bash
+        env:
+          KIND: ${{ inputs.kind }}
+        run: |
+          set -euo pipefail
+          case "$KIND" in timezone|notice-census) ;; *) echo "::error::허용되지 않은 종류"; exit 1;; esac
+          B64=$(base64 -w0 ops/diagnose-readonly.sh)
+          CMD="echo $B64 | base64 -d | bash -s -- $KIND"
+          PARAMS=$(jq -cn --arg c "$CMD" '{commands:[$c]}')
+          CMD_ID=$(aws ssm send-command --instance-ids "$EC2_INSTANCE_ID" \
+            --document-name AWS-RunShellScript --parameters "$PARAMS" \
+            --query Command.CommandId --output text)
+          echo "SSM Command ID: $CMD_ID"
+          STATUS=""
+          for _ in $(seq 1 30); do
+            STATUS=$(aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$EC2_INSTANCE_ID" \
+              --query Status --output text 2>/dev/null || echo Pending)
+            case "$STATUS" in Success|Failed|Cancelled|TimedOut) break;; esac
+            sleep 5
+          done
+          aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$EC2_INSTANCE_ID" --output json \
+            | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("StandardOutputContent","")); e=d.get("StandardErrorContent",""); print("STDERR:", e[:2000])'
+          [ "$STATUS" = Success ] || { echo "::error::점검 실패 (Status=$STATUS)"; exit 1; }
