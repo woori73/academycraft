@@ -110,8 +110,8 @@ function esc(s) {
 async function loadList() {
   const authKey = document.getElementById('authkey').value.trim();
   // 학생 인증키는 URL 파라미터에 포함하지 않고 X-Auth-Key 헤더로만 전송
-  let url = `/@academy/notices?`;
-  if (scope) url += `scope=${scope}&`;
+  let url = `/@academy/notices`;
+  if (scope) url += `?scope=${encodeURIComponent(scope)}`;
   try {
     const res = await apiGet(url, authKey || undefined);
     const data = await res.json();
