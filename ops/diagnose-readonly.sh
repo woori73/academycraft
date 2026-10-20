@@ -1,6 +1,6 @@
 #!/bin/bash
 # 운영 읽기 전용 점검(고정 종류만). 임의 명령·SQL 입력 불가. DB는 READ ONLY 트랜잭션 + SELECT 집계만, 개인정보·비밀값 출력 없음.
-# 사용: diagnose-readonly.sh <notice-census|timezone>
+# 사용: diagnose-readonly.sh <notice-census|timezone|db-connections>
 # 테스트용 override: ENV_FILE(기본 /etc/academycraft/env), MYSQL_BIN(기본 mysql)
 set -uo pipefail
 KIND="${1:-}"
@@ -46,8 +46,12 @@ case "$KIND" in
     db_query "SELECT HOUR(occurred_at) AS hour_of_day, COUNT(*) AS cnt FROM rea_attendance_events GROUP BY HOUR(occurred_at) ORDER BY hour_of_day"
     db_query "SELECT COUNT(*) AS events, MIN(occurred_at) AS first_at, MAX(occurred_at) AS last_at, MAX(created_at) AS last_created FROM rea_attendance_events"
     ;;
+  db-connections)
+    echo "== MySQL 연결 수(배포 사전점검: Threads_connected, max_connections, Max_used_connections) =="
+    db_query "SHOW GLOBAL STATUS WHERE Variable_name IN ('Threads_connected','Max_used_connections'); SHOW GLOBAL VARIABLES LIKE 'max_connections'"
+    ;;
   *)
-    echo "허용되지 않은 종류: $KIND (notice-census | timezone)" >&2
+    echo "허용되지 않은 종류: $KIND (notice-census | timezone | db-connections)" >&2
     exit 2
     ;;
 esac
