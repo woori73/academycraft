@@ -68,6 +68,10 @@ class AgentTask3VerificationTest {
     private ReaNotificationRepository notificationRepository;
     @Autowired
     private ReaAuditLogRepository auditLogRepository;
+    @Autowired
+    private com.rea.academy.agent.plan.AgentPlanService planService;
+    @Autowired
+    private com.rea.academy.domain.admin.ReaAcademyRepository academyRepository;
 
     private AgentContext ownerCtx;
     private Long englishClassId;
@@ -78,6 +82,10 @@ class AgentTask3VerificationTest {
 
     @BeforeEach
     void setUp() {
+        if (academyRepository.findById(ACADEMY).isEmpty()) {
+            academyRepository.save(com.rea.academy.domain.admin.ReaAcademy.builder()
+                    .id(ACADEMY).name("테스트학원").active(true).build());
+        }
         Long ownerId = memberService.createMember(MemberDto.CreateRequest.builder()
                 .academyId(ACADEMY).role(ReaRole.ACADEMY_OWNER)
                 .name("원장").phone("010-0000-0001").build()).getId();
@@ -133,6 +141,11 @@ class AgentTask3VerificationTest {
     private AgentContext approved(AgentContext base) {
         return new AgentContext(base.principalType(), base.academyId(), base.role(),
                 base.principalId(), base.principalName(), true);
+    }
+
+    private int planCreatedAuditCount() {
+        return auditLogRepository
+                .findByAcademyIdAndActionTypeOrderByIdDesc(ACADEMY, AuditActionType.AGENT_PLAN_CREATED).size();
     }
 
     private int auditCount() {
@@ -325,7 +338,7 @@ class AgentTask3VerificationTest {
         int noticesBefore = noticeCount();
         int notificationsBefore = notificationRepository
                 .findByAcademyIdOrderByCreatedAtDesc(ACADEMY).size();
-        int auditsBefore = auditCount();
+        int auditsBefore = planCreatedAuditCount();
 
         AgentDto.ExecuteResponse resp = agentExecutor.execute(ownerCtx,
                 "학부모 공지문 작성해줘: 제목: 내일 휴원 안내 내용: 내일은 하루 휴원합니다.");
@@ -333,35 +346,36 @@ class AgentTask3VerificationTest {
         assertThat(resp.isSuccess()).isFalse();
         assertThat(resp.getToolUsed()).isEqualTo("createNoticeDraft");
         assertThat(resp.getRequiresApproval()).isTrue();
+        assertThat(resp.getPlan().getStatus()).isEqualTo("PENDING");
 
         // DB 변경 없음
         assertThat(noticeCount()).isEqualTo(noticesBefore);
         // 알림 발송 없음
         assertThat(notificationRepository.findByAcademyIdOrderByCreatedAtDesc(ACADEMY).size())
                 .isEqualTo(notificationsBefore);
-        // 거부는 감사 로그에 기록
-        assertThat(auditCount()).isEqualTo(auditsBefore + 1);
-        var logs = auditLogRepository
-                .findByAcademyIdAndActionTypeOrderByIdDesc(ACADEMY, AuditActionType.AGENT_TOOL_EXECUTED);
-        assertThat(logs.get(0).getDetail()).contains("거부: 쓰기 승인 없음");
+        // 계획 생성은 감사 로그에 기록 (입력 원문이 아니라 해시 요약)
+        assertThat(planCreatedAuditCount()).isEqualTo(auditsBefore + 1);
     }
 
-    // ===== 케이스 5: 승인 → DB 반영 + 감사 로그 =====
+    // ===== 케이스 5: 계획 승인 → DB 반영 + 감사 로그 =====
 
     @Test
-    @DisplayName("케이스 5: 승인 후 공지 초안 DB 반영 + 감사 로그")
+    @DisplayName("케이스 5: 계획 승인 후 공지 초안 DB 반영 + 감사 로그 (writeApproved 불리언이 아닌 서버 승인)")
     void case5_noticeDraft_approved_persistsAndAudits() {
         int noticesBefore = noticeCount();
         int notificationsBefore = notificationRepository
                 .findByAcademyIdOrderByCreatedAtDesc(ACADEMY).size();
-        int auditsBefore = auditCount();
 
-        AgentDto.ExecuteResponse resp = agentExecutor.execute(approved(ownerCtx),
+        AgentDto.ExecuteResponse requested = agentExecutor.execute(ownerCtx,
                 "학부모 공지문 작성해줘: 제목: 내일 휴원 안내 내용: 내일은 하루 휴원합니다.");
+        assertThat(requested.getRequiresApproval()).isTrue();
+        assertThat(noticeCount()).isEqualTo(noticesBefore); // 계획 단계에서는 저장되지 않는다
 
-        assertThat(resp.isSuccess()).isTrue();
-        assertThat(resp.getToolUsed()).isEqualTo("createNoticeDraft");
-        assertThat(resp.getResult().get("draft")).isEqualTo(true);
+        AgentDto.PlanView done = planService.approve(ownerCtx, requested.getPlan().getPlanId(),
+                requested.getPlan().getPlanHash(), "DIRECT");
+
+        assertThat(done.getStatus()).isEqualTo("EXECUTED");
+        assertThat(done.getResult().get("draft")).isEqualTo(true);
 
         // DB에 초안 공지 반영 (제목에 [초안] 접두어)
         assertThat(noticeCount()).isEqualTo(noticesBefore + 1);
@@ -369,39 +383,41 @@ class AgentTask3VerificationTest {
         assertThat(saved.getTitle()).isEqualTo("[초안] 내일 휴원 안내");
         assertThat(saved.getContent()).isEqualTo("내일은 하루 휴원합니다.");
         assertThat(saved.getClassId()).isNull(); // 전체 대상
-
-        // 학부모 알림 발송 없음 (DB 반영까지만)
+        // 알림은 발송되지 않음 (초안 전용)
         assertThat(notificationRepository.findByAcademyIdOrderByCreatedAtDesc(ACADEMY).size())
                 .isEqualTo(notificationsBefore);
 
-        // 감사 로그에 성공 기록
-        assertThat(auditCount()).isEqualTo(auditsBefore + 1);
+        // 감사 로그에 실행 기록
         var logs = auditLogRepository
-                .findByAcademyIdAndActionTypeOrderByIdDesc(ACADEMY, AuditActionType.AGENT_TOOL_EXECUTED);
+                .findByAcademyIdAndActionTypeOrderByIdDesc(ACADEMY, AuditActionType.AGENT_PLAN_EXECUTED);
         assertThat(logs.get(0).getTargetName()).isEqualTo("createNoticeDraft");
-        assertThat(logs.get(0).getDetail()).contains("성공");
+        assertThat(logs.get(0).getDetail()).contains(requested.getPlan().getPlanId());
     }
 
-    // ===== 케이스 6: 승인 거부 → DB 변경 없음 =====
+    // ===== 케이스 6: 승인 거부(취소) → DB 변경 없음 =====
 
     @Test
-    @DisplayName("케이스 6: 승인 거부(취소) 시 DB 변경 없음")
+    @DisplayName("케이스 6: 계획 취소 시 DB 변경 없음 + 취소된 계획은 승인할 수 없음")
     void case6_approvalDenied_noDbChange() {
         int noticesBefore = noticeCount();
         Long studentsBefore = (long) memberService.getStudents(ACADEMY, null).size();
 
-        // 사용자가 승인 요청을 취소(= writeApproved=false 유지)한 것과 동일
         AgentDto.ExecuteResponse resp = agentExecutor.execute(ownerCtx,
                 "학부모 공지문 작성해줘: 제목: 취소 테스트 내용: 반영되면 안 됨.");
-
         assertThat(resp.isSuccess()).isFalse();
         assertThat(resp.getRequiresApproval()).isTrue();
+
+        AgentDto.PlanView cancelled = planService.cancel(ownerCtx, resp.getPlan().getPlanId());
+        assertThat(cancelled.getStatus()).isEqualTo("CANCELLED");
+        org.junit.jupiter.api.Assertions.assertThrows(com.rea.academy.agent.plan.AgentPlanException.class,
+                () -> planService.approve(ownerCtx, resp.getPlan().getPlanId(), resp.getPlan().getPlanHash(), "DIRECT"));
+
         assertThat(noticeCount()).isEqualTo(noticesBefore);
         assertThat((long) memberService.getStudents(ACADEMY, null).size()).isEqualTo(studentsBefore);
-        // 취소된 명령의 흔적은 감사 로그에만 남음
+        // 취소·생성 흔적은 감사 로그에 남음
         var logs = auditLogRepository
-                .findByAcademyIdAndActionTypeOrderByIdDesc(ACADEMY, AuditActionType.AGENT_TOOL_EXECUTED);
-        assertThat(logs.get(0).getDetail()).contains("거부: 쓰기 승인 없음");
+                .findByAcademyIdAndActionTypeOrderByIdDesc(ACADEMY, AuditActionType.AGENT_PLAN_CANCELLED);
+        assertThat(logs).isNotEmpty();
     }
 
     // ===== 케이스 7: 성적 분석 =====

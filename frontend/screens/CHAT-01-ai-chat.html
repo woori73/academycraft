@@ -104,9 +104,6 @@
   .input-bar input[type=text] { flex: 1; min-width: 180px; padding: 12px;
                                 font-size: 15px; border: 1px solid #ccc;
                                 border-radius: 8px; }
-  .approve { display: flex; align-items: center; gap: 6px; font-size: 13px;
-             color: #555; white-space: nowrap; }
-  .approve input { width: 16px; height: 16px; }
   .typing { align-self: flex-start; color: #888; font-size: 13px;
             font-style: italic; }
   .ctx-note { font-size: 11px; color: #999; text-align: center; padding: 4px 0 0; }
@@ -124,8 +121,7 @@
     input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; min-width: 0; flex: none; accent-color: #0066cc; }
 
     table.data { display: block; overflow-x: auto; }
-    .approve { padding: 12px 4px; }
-    .auth-bar { row-gap: 8px; }
+      .auth-bar { row-gap: 8px; }
     #authKey { flex: 1; min-width: 0; width: auto; }  }
 </style>
 <script defer src="../components/home-navigation.js"></script>
@@ -153,9 +149,6 @@
 <div class="input-bar">
   <input type="text" id="cmdInput" placeholder='예: "오늘 결석한 학생을 정리해 줘"'
     onkeydown="if(event.key==='Enter')sendCmd()">
-  <label class="approve" title="쓰기 도구(학생 등록·반 배정·공지 초안)를 승인 없이 재요청 없이 바로 실행">
-    <input type="checkbox" id="writeApproved"> 쓰기 승인
-  </label>
   <button class="btn" id="sendBtn" onclick="sendCmd()">전송</button>
 </div>
 
@@ -171,7 +164,6 @@
 const MAX_TURNS = 20;
 const turns = [];              // [{command, toolUsed, ok}]
 let lastIds = {};              // 최근 성공 결과의 주요 ID: {studentId, studentName, classId, className, noticeId, homeworkId, authKey}
-let pendingCmd = null;          // requiresApproval 대기 중인 명령
 
 /* 지시어(아까/그/저/방금) 감지 시 최근 성공 결과의 ID를 명령에 주입.
    CommandParser는 "학생 12" / "2반" 같은 숫자 패턴을 인식한다. */
@@ -470,6 +462,21 @@ function fallbackCopy(key, done) {
 }
 
 /* ---------- 응답 처리 ---------- */
+/* 서버가 만든 변경 미리보기만 표시한다 (모델 문장 아님). 모든 값은 이스케이프한다. */
+function renderPreview(preview) {
+  if (!preview) return '';
+  const rows = Object.entries(preview.changes || {}).map(([k, v]) =>
+    `<tr><td style="padding:2px 8px 2px 0;color:#555;">${escapeHtml(k)}</td><td>${escapeHtml(String(v))}</td></tr>`).join('');
+  return `<div style="font-weight:600;margin-bottom:6px;">${escapeHtml(preview.summary || '')}</div>
+    <table style="font-size:14px;">${rows}</table>
+    <div style="font-size:13px;color:#555;margin-top:6px;">${escapeHtml(preview.notice || '')}</div>`;
+}
+function expiryNote(expiresAt) {
+  const t = expiresAt ? new Date(expiresAt) : null;
+  if (!t || isNaN(t)) return '10분 안에 승인해 주세요.';
+  return `${t.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })} 까지 승인할 수 있어요.`;
+}
+
 function renderAgentResponse(cmd, data) {
   if (data.success) {
     rememberResult(data.toolUsed, data.result);
@@ -477,19 +484,27 @@ function renderAgentResponse(cmd, data) {
       <span class="tool-badge">🛠 ${escapeHtml(data.toolUsed || '')}</span>
       <div>${escapeHtml(data.message || '실행 완료')}</div>
       ${renderResult(data.toolUsed, data.result)}`);
-  } else if (data.requiresApproval) {
-    pendingCmd = cmd;
-    const el = addAgentBubble(`
+  } else if (data.requiresApproval && data.plan) {
+    const plan = data.plan;
+    addAgentBubble(`
       <span class="tool-badge">🛠 ${escapeHtml(data.toolUsed || '')}</span>
-      <div class="err">⚠️ 승인이 필요합니다: ${escapeHtml(data.message || '')}</div>
-      <div class="pending">
-        <div style="font-size:13px;margin-bottom:8px;">
-          쓰기 작업입니다. 실행하려면 승인해 주세요.</div>
-        <button class="btn btn-sm btn-warn" onclick="approveAndRun()">
+      <div class="err">⚠️ 아직 저장되지 않았어요. 아래 변경 내용을 확인하고 승인해 주세요.</div>
+      <div class="pending" data-plan="${escapeHtml(plan.planId)}">
+        ${renderPreview(plan.preview)}
+        <div style="font-size:13px;margin:8px 0;">${escapeHtml(expiryNote(plan.expiresAt))}</div>
+        <button class="btn btn-sm btn-warn" onclick="approvePlan('${escapeHtml(plan.planId)}','${escapeHtml(plan.planHash)}', this)">
           승인하고 실행</button>
-        <button class="btn btn-sm btn-ghost" onclick="cancelPending()">취소</button>
+        <button class="btn btn-sm btn-ghost" onclick="cancelPlan('${escapeHtml(plan.planId)}', this)">취소</button>
       </div>`);
-    void el;
+  } else if (data.errorCode === 'OWNER_ONLY') {
+    addAgentBubble(`
+      <span class="tool-badge">🛠 ${escapeHtml(data.toolUsed || '')}</span>
+      <div class="err">⛔ ${escapeHtml(data.message || 'AI 쓰기는 원장만 사용할 수 있습니다.')}</div>
+      ${data.draftPreview ? `<div class="pending">${renderPreview(data.draftPreview)}</div>` : ''}
+      <div style="font-size:13px;margin-top:6px;">필요한 경우 관리 화면에서 직접 처리하거나 원장에게 요청하세요.</div>`);
+  } else if (data.errorCode) {
+    addAgentBubble(`<div class="err">❌ ${escapeHtml(data.message || '요청을 처리하지 못했습니다.')}</div>
+      <div style="font-size:13px;margin-top:6px;">관리 화면에서 직접 처리할 수 있습니다.</div>`);
   } else {
     const sugg = (data.suggestions || []).map(s => {
       const tool = TOOLS.find(t => t.name === s);
@@ -514,18 +529,16 @@ async function sendCmd() {
   if (!cmd) return;
 
 
-  pendingCmd = null;
   const resolved = resolveContext(cmd);
   input.value = '';
   addUserBubble(resolved !== cmd ? `${cmd} (→ ${resolved})` : cmd);
 
-  const writeApproved = document.getElementById('writeApproved').checked;
   const btn = document.getElementById('sendBtn');
   btn.disabled = true;
   showTyping();
 
   try {
-    const res = await apiPost('/@academy/agent/execute', { command: resolved, writeApproved });
+    const res = await apiPost('/@academy/agent/execute', { command: resolved });
     let data = null;
     try { data = await res.json(); } catch (e) { /* 비JSON 응답 */ }
 
@@ -536,6 +549,9 @@ async function sendCmd() {
       addAgentBubble(`<div class="err">⛔ 403 접근 거부: 학부모 계정은 Agent를 사용할 수 없고,
         인증된 학원(academyId)과 다른 학원 번호는 접근할 수 없습니다.
         원장·강사 계정으로 다시 로그인해 주세요.</div>`);
+    } else if (data && data.message && [400, 429, 501, 503].includes(res.status)) {
+      addAgentBubble(`<div class="err">❌ ${escapeHtml(data.message)}</div>
+        <div style="font-size:13px;margin-top:6px;">관리 화면에서 직접 처리할 수 있습니다.</div>`);
     } else if (!res.ok || !data) {
       addAgentBubble(`<div class="err">서버 오류 (HTTP ${res.status}).
         잠시 후 다시 시도하거나, 관리자에게 문의하세요.</div>`);
@@ -554,15 +570,37 @@ async function sendCmd() {
   }
 }
 
-function approveAndRun() {
-  if (!pendingCmd) return;
-  document.getElementById('writeApproved').checked = true;
-  document.getElementById('cmdInput').value = pendingCmd;
-  sendCmd();
+/* 승인: 입력을 다시 보내지 않고 계획 ID 와 사용자가 본 계획 해시만 보낸다. 실행 입력은 서버에 저장된 값이다. */
+async function approvePlan(planId, planHash, btn) {
+  const box = btn.closest('.pending');
+  box.querySelectorAll('button').forEach(b => { b.disabled = true; });   // 더블 클릭 방지(서버도 1회만 실행)
+  try {
+    const res = await apiPost(`/@academy/agent/plans/${encodeURIComponent(planId)}/approve`, { planHash });
+    let data = null;
+    try { data = await res.json(); } catch (e) { /* 비JSON 응답 */ }
+    if (res.ok && data && data.status === 'EXECUTED') {
+      rememberResult(data.toolName, data.result);
+      addAgentBubble(`<span class="tool-badge">🛠 ${escapeHtml(data.toolName || '')}</span>
+        <div>✅ ${escapeHtml(data.message || '실행했습니다.')}</div>
+        ${renderResult(data.toolName, data.result)}`);
+    } else if (res.ok && data && data.status === 'FAILED') {
+      addAgentBubble(`<div class="err">❌ ${escapeHtml(data.message || '실행하지 못했습니다.')}</div>
+        <div style="font-size:13px;margin-top:6px;">자동으로 다시 시도하지 않았습니다. 목록에서 결과를 확인한 뒤 필요하면 새로 요청하세요.</div>`);
+    } else {
+      addAgentBubble(`<div class="err">⛔ ${escapeHtml((data && data.message) || ('승인하지 못했습니다 (HTTP ' + res.status + ')'))}</div>
+        <div style="font-size:13px;margin-top:6px;">바뀐 내용은 없습니다. 다시 요청해 주세요.</div>`);
+    }
+  } catch (e) {
+    addAgentBubble(`<div class="err">네트워크 오류: ${escapeHtml(e.message)}. 결과가 불확실하면 목록에서 직접 확인하세요.</div>`);
+  }
 }
-function cancelPending() {
-  pendingCmd = null;
-  addAgentBubble('<div>승인 요청이 취소되었습니다.</div>');
+async function cancelPlan(planId, btn) {
+  const box = btn.closest('.pending');
+  box.querySelectorAll('button').forEach(b => { b.disabled = true; });
+  try {
+    await apiPost(`/@academy/agent/plans/${encodeURIComponent(planId)}/cancel`, {});
+  } catch (e) { /* 만료로 자동 정리됨 */ }
+  addAgentBubble('<div>승인 요청이 취소되었습니다. 바뀐 내용은 없습니다.</div>');
 }
 
 (function init() {

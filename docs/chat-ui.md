@@ -16,7 +16,7 @@
 ### 동작 흐름
 1. 자연어 명령 입력 (예: "오늘 결석한 학생을 정리해 줘")
 2. X-Auth-Key 헤더와 함께 `POST /api/rea/{academyId}/agent/execute` 호출
-   (`{command, writeApproved: 토글 상태}`)
+   (`{command}` — P1-a 이후 쓰기 승인 토글은 없다. 쓰기는 서버 계획 승인으로만 실행)
 3. 응답 렌더링
    - **성공**: 도구명 배지 + 도구별 읽기 쉬운 렌더링(표/막대 차트/요약 박스)
    - **requiresApproval=true**: "승인이 필요합니다" + **[승인하고 실행]** 버튼

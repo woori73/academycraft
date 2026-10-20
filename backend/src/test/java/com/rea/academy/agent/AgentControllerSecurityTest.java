@@ -153,29 +153,41 @@ class AgentControllerSecurityTest {
         assertThat(content).contains("승인");
     }
 
+    // given 원장 / when writeApproved=true 로 쓰기를 요청하면 / then 400 으로 거부되고 아무것도 저장되지 않는다 (불리언 우회 차단)
     @Test
-    @DisplayName("원장 쓰기 명령(승인 있음): 200 + 실행 성공")
-    void owner_writeWithApproval_ok() throws Exception {
+    @DisplayName("원장 writeApproved=true 쓰기 요청: 400 거부 + 데이터 무변경 (불리언 승인 우회 차단)")
+    void owner_writeApprovedBoolean_rejected() throws Exception {
         mockMvc.perform(post("/api/rea/" + ACADEMY_A + "/agent/execute")
                         .header("X-Auth-Key", ownerKeyA)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"command\":\"학생 등록 보안학생\",\"writeApproved\":true}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.toolUsed").value("registerStudent"));
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("WRITE_APPROVED_NOT_ACCEPTED"));
 
-        assertThat(memberService.getStudents(ACADEMY_A, "보안학생")).hasSize(1);
+        assertThat(memberService.getStudents(ACADEMY_A, "보안학생")).isEmpty();
     }
 
+    // given 강사 / when writeApproved=true 로 쓰기를 요청하면 / then 400 거부, 승인 없이 쓰기 요청 시에는 초안만 보이고 저장되지 않는다
     @Test
-    @DisplayName("강사 쓰기 명령(승인 있음): 200 + 실행 성공")
-    void teacher_writeWithApproval_ok() throws Exception {
+    @DisplayName("강사 쓰기 요청: writeApproved=true 는 400, 그 외에는 서버 초안만(저장 없음)")
+    void teacher_write_isDraftOnly_andBooleanRejected() throws Exception {
         mockMvc.perform(post("/api/rea/" + ACADEMY_A + "/agent/execute")
                         .header("X-Auth-Key", teacherKeyA)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"command\":\"학생 등록 강사등록학생\",\"writeApproved\":true}"))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(post("/api/rea/" + ACADEMY_A + "/agent/execute")
+                        .header("X-Auth-Key", teacherKeyA)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"command\":\"학생 등록 강사등록학생\",\"writeApproved\":false}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.success").value(true));
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.errorCode").value("OWNER_ONLY"))
+                .andExpect(jsonPath("$.draftPreview.changes").exists())
+                .andExpect(jsonPath("$.plan").doesNotExist());
+
+        assertThat(memberService.getStudents(ACADEMY_A, "강사등록학생")).isEmpty();
     }
 
     @Test

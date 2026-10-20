@@ -79,14 +79,19 @@ class AgentExecutorTest {
         assertThat(memberService.getStudents(ACADEMY, "김철수")).isEmpty();
     }
 
+    // given 쓰기 승인 불리언이 true인 컨텍스트 / when 쓰기 명령을 실행하면 / then 실행되지 않고 서버 계획만 생성된다
     @Test
-    @DisplayName("쓰기 도구: 승인 있으면 실행")
-    void writeTool_withApproval_executes() {
+    @DisplayName("쓰기 도구: writeApproved=true 여도 실행되지 않고 서버 계획(PENDING)만 생성")
+    void writeTool_withApprovedBoolean_doesNotExecute_createsPlanOnly() {
         AgentDto.ExecuteResponse resp = agentExecutor.execute(approved(ownerCtx), "학생 등록 김철수");
 
-        assertThat(resp.isSuccess()).isTrue();
+        assertThat(resp.isSuccess()).isFalse();
+        assertThat(resp.getRequiresApproval()).isTrue();
         assertThat(resp.getToolUsed()).isEqualTo("registerStudent");
-        assertThat(memberService.getStudents(ACADEMY, "김철수")).hasSize(1);
+        assertThat(resp.getPlan()).isNotNull();
+        assertThat(resp.getPlan().getStatus()).isEqualTo("PENDING");
+        assertThat(resp.getPlan().getPreview()).containsKey("changes");
+        assertThat(memberService.getStudents(ACADEMY, "김철수")).isEmpty();
     }
 
     @Test
@@ -116,14 +121,21 @@ class AgentExecutorTest {
                 .findByAcademyIdAndActionTypeOrderByIdDesc(ACADEMY, AuditActionType.AGENT_TOOL_EXECUTED)
                 .size();
 
-        agentExecutor.execute(ownerCtx, "오늘 결석 학생");           // 성공
-        agentExecutor.execute(ownerCtx, "학생 등록 김철수");         // 승인 없음 거부
+        int plansBefore = auditLogRepository
+                .findByAcademyIdAndActionTypeOrderByIdDesc(ACADEMY, AuditActionType.AGENT_PLAN_CREATED)
+                .size();
+
+        agentExecutor.execute(ownerCtx, "오늘 결석 학생");           // 읽기: 즉시 실행
+        agentExecutor.execute(ownerCtx, "학생 등록 김철수");         // 쓰기: 실행하지 않고 계획 생성
 
         var logs = auditLogRepository
                 .findByAcademyIdAndActionTypeOrderByIdDesc(ACADEMY, AuditActionType.AGENT_TOOL_EXECUTED);
-        assertThat(logs).hasSize(before + 2);
+        assertThat(logs).hasSize(before + 1);
         assertThat(logs).allMatch(l -> "에이전트".equals(l.getTargetType()));
         assertThat(logs).anyMatch(l -> "getAbsentStudents".equals(l.getTargetName()));
-        assertThat(logs).anyMatch(l -> "registerStudent".equals(l.getTargetName()));
+        var planLogs = auditLogRepository
+                .findByAcademyIdAndActionTypeOrderByIdDesc(ACADEMY, AuditActionType.AGENT_PLAN_CREATED);
+        assertThat(planLogs).hasSize(plansBefore + 1);
+        assertThat(planLogs.get(0).getTargetName()).isEqualTo("registerStudent");
     }
 }

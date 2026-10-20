@@ -3,6 +3,10 @@ package com.rea.academy.controller;
 import com.rea.academy.agent.AgentContext;
 import com.rea.academy.agent.AgentDispatcher;
 import com.rea.academy.agent.AgentExecutor;
+import com.rea.academy.agent.plan.AgentPlanException;
+import com.rea.academy.agent.plan.AgentPlanService;
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.http.HttpStatus;
 import com.rea.academy.dto.AgentDto;
 import com.rea.academy.security.AuthContext;
 import com.rea.academy.security.AuthContextHolder;
@@ -26,25 +30,67 @@ public class AgentController {
 
     private final AgentExecutor agentExecutor;
     private final AgentDispatcher agentDispatcher;
+    private final AgentPlanService planService;
 
     /**
-     * 자연어 명령 실행.
-     * body: {command: "자연어 명령", writeApproved: boolean}
-     * 응답: {success, toolUsed, result, message, requiresApproval, suggestions}
+     * 자연어 명령 또는 구조화 호출(tool + params) 실행.
+     * body: {command | tool+params, idempotencyKey?}
+     *
+     * 읽기 도구는 즉시 실행한다. 쓰기 도구는 <b>실행하지 않고</b> 서버가 미리보기를 만든 실행 계획을 돌려준다.
+     * 실행은 {@code POST .../plans/{planId}/approve} 로만 가능하다.
+     * {@code writeApproved:true} 는 승인 근거가 아니므로 400 으로 거부한다 (기존 클라이언트 우회 차단).
      */
     @PostMapping("/execute")
     public ResponseEntity<AgentDto.ExecuteResponse> execute(
             @PathVariable Long academyId,
-            @RequestBody AgentDto.ExecuteRequest req) {
+            @RequestBody AgentDto.ExecuteRequest req,
+            HttpServletRequest http) {
+        AgentContext ctx = contextFor(academyId);
+        if (Boolean.TRUE.equals(req.getWriteApproved())) {
+            planService.recordRejected(ctx, "reason=WRITE_APPROVED_NOT_ACCEPTED (boolean 승인 우회 시도)");
+            throw new AgentPlanException(HttpStatus.BAD_REQUEST, "WRITE_APPROVED_NOT_ACCEPTED",
+                    "writeApproved 는 더 이상 승인 근거로 사용할 수 없습니다. "
+                            + "쓰기는 계획을 만든 뒤 승인 API(/agent/plans/{planId}/approve)로만 실행됩니다.");
+        }
+        AgentDto.ExecuteResponse response = agentExecutor.execute(ctx, req, authSource(http));
+        int status = response.getHttpStatus() == null ? 200 : response.getHttpStatus();
+        return ResponseEntity.status(status).body(response);
+    }
+
+    /** 실행 계획 조회 (계획을 만든 본인만) */
+    @GetMapping("/plans/{planId}")
+    public ResponseEntity<AgentDto.PlanView> getPlan(@PathVariable Long academyId, @PathVariable String planId) {
+        return ResponseEntity.ok(planService.get(contextFor(academyId), planId));
+    }
+
+    /** 계획 승인 후 1회 실행. 입력은 받지 않고 사용자가 본 계획 해시만 받는다. */
+    @PostMapping("/plans/{planId}/approve")
+    public ResponseEntity<AgentDto.PlanView> approvePlan(
+            @PathVariable Long academyId, @PathVariable String planId,
+            @RequestBody AgentDto.ApproveRequest req, HttpServletRequest http) {
+        if (req == null || req.getPlanHash() == null || req.getPlanHash().isBlank()) {
+            throw new IllegalArgumentException("planHash 는 필수입니다.");
+        }
+        return ResponseEntity.ok(planService.approve(contextFor(academyId), planId, req.getPlanHash(), authSource(http)));
+    }
+
+    /** 계획 취소 (승인 전에만) */
+    @PostMapping("/plans/{planId}/cancel")
+    public ResponseEntity<AgentDto.PlanView> cancelPlan(@PathVariable Long academyId, @PathVariable String planId) {
+        return ResponseEntity.ok(planService.cancel(contextFor(academyId), planId));
+    }
+
+    /** 인증 컨텍스트에서 실행 컨텍스트를 만든다. 쓰기 승인 불리언은 항상 false (클라이언트 값은 쓰지 않는다). */
+    @SuppressWarnings("deprecation")
+    private AgentContext contextFor(Long academyId) {
         AuthContext auth = AuthContextHolder.get();
-        AgentContext ctx = new AgentContext(
-                auth.principalType(),
-                academyId,
-                auth.role(),
-                auth.principalId(),
-                auth.name(),
-                Boolean.TRUE.equals(req.getWriteApproved()));
-        return ResponseEntity.ok(agentExecutor.execute(ctx, req.getCommand()));
+        return new AgentContext(auth.principalType(), academyId, auth.role(), auth.principalId(), auth.name(), false);
+    }
+
+    /** BuildIt 게이트웨이 경유 여부와 BuildIt 역할 (승인 시 연결 변경 탐지용). 클라이언트 입력이 아니다. */
+    private static String authSource(HttpServletRequest http) {
+        Object role = http.getAttribute("buildit.role");
+        return role == null ? "DIRECT" : "BUILDIT:" + role;
     }
 
     /**

@@ -69,12 +69,32 @@ class MySqlSchemaValidationTest {
     }
 
     @Test
-    @DisplayName("Flyway V1·V2·V3 가 SUCCESS 로 적용됨")
+    @DisplayName("Flyway V1~V6 이 SUCCESS 로 적용됨")
     void flywayMigrationsApplied() {
         List<String> versions = jdbcTemplate.queryForList(
                 "SELECT version FROM flyway_schema_history WHERE success = 1 ORDER BY installed_rank",
                 String.class);
-        assertThat(versions).containsExactly("1", "2", "3");
+        assertThat(versions).containsExactly("1", "2", "3", "4", "5", "6");
+    }
+
+    // given V6 적용 후 MySQL / when rea_agent_plans 구조를 조회하면 / then 중복 방지 유니크 키와 조회 인덱스가 있고 기존 감사 테이블은 그대로다
+    @Test
+    @DisplayName("V6: rea_agent_plans 테이블·유니크 키(idempotency)·인덱스가 존재한다")
+    void agentPlansTableCreatedByV6() {
+        List<String> uniqueCols = jdbcTemplate.queryForList(
+                "SELECT column_name FROM information_schema.statistics WHERE table_schema = DATABASE() "
+                        + "AND table_name = 'rea_agent_plans' AND index_name = 'uq_agent_plan_idem' AND non_unique = 0 "
+                        + "ORDER BY seq_in_index", String.class);
+        assertThat(uniqueCols).containsExactly("academy_id", "idempotency_key");
+        Integer indexes = jdbcTemplate.queryForObject(
+                "SELECT COUNT(DISTINCT index_name) FROM information_schema.statistics WHERE table_schema = DATABASE() "
+                        + "AND table_name = 'rea_agent_plans' AND index_name IN "
+                        + "('idx_agent_plan_academy_status','idx_agent_plan_principal')", Integer.class);
+        assertThat(indexes).isEqualTo(2);
+        Integer auditColumns = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() "
+                        + "AND table_name = 'rea_audit_logs'", Integer.class);
+        assertThat(auditColumns).isEqualTo(10);
     }
 
     @Test

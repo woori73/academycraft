@@ -22,7 +22,7 @@ HTTP 요청 (X-Auth-Key)
 | 클래스 | 역할 |
 |---|---|
 | `AgentTool` | 도구 인터페이스: `getName()`, `getDescription()`, `getInputSchema()`, `isWrite()`, `execute(input, ctx)` |
-| `AgentContext` | 실행 컨텍스트 (레코드): `principalType`, `academyId`, `role`, `principalId`, `principalName`, `writeApproved`. 1단계 `AuthContext`에서 학원·역할·주체를 가져온다 |
+| `AgentContext` | 실행 컨텍스트 (레코드): `principalType`, `academyId`, `role`, `principalId`, `principalName`, `writeApproved`(P1-a 이후 **쓰기 승인 근거로 쓰지 않음**, 하위 호환 자리). 1단계 `AuthContext`에서 학원·역할·주체를 가져온다 |
 | `AgentUtils` | 입력 검증·날짜 파싱("오늘"/"어제"/"내일"/"yyyy-MM-dd") 공통 유틸 |
 | `AgentDispatcher` | Spring에 등록된 `AgentTool` 빈을 이름으로 조회·실행 |
 | `CommandParser` | 자연어 → 도구 호출 변환 (키워드/패턴 기반). 실패 시 후보 도구 제안 |
@@ -103,15 +103,15 @@ HTTP 요청 (X-Auth-Key)
 | 구분 | 정책 |
 |---|---|
 | 읽기(Read) 도구 | 즉시 실행 |
-| 쓰기(Write) 도구 | `writeApproved=true` **이고** 학부모가 아닐 때만 실행. 승인 없으면 `requiresApproval: true` + "승인 필요" 응답 (도구 미실행) |
+| 쓰기(Write) 도구 | **`writeApproved` 불리언으로는 실행되지 않는다(P1-a).** 원장은 서버 보관 실행 계획(미리보기 포함)을 받고 `POST …/agent/plans/{planId}/approve` 로만 실행된다. 강사는 서버 초안만 확인, 학부모는 거부. → [agent-approval.md](agent-approval.md) |
 | 학부모 | 쓰기 도구 호출 거부 (승인 여부 무관). HTTP 레벨에서도 `POST`는 쓰기이므로 `/agent/execute` 접근 시 403 |
 | 외부 메시지 발송 | 금지. 모든 도구는 Mock/발송 없음 경로만 사용 |
-| 감사 로그 | 모든 실행(성공·승인 거부·실패)을 `rea_audit_logs`에 `AGENT_TOOL_EXECUTED`로 append-only 기록 (대상 종류="에이전트") |
+| 감사 로그 | 읽기 실행·학부모 거부는 `AGENT_TOOL_EXECUTED`, AI 쓰기 계획의 생성·승인·실행·실패·거부·취소·만료·무효화는 `AGENT_PLAN_*` 로 `rea_audit_logs`에 append-only 기록 (대상 종류="에이전트") |
 
 ### 역할 × Agent API 접근 (1단계 보안 유지)
 
 - 원장: 전체 허용
-- 강사: 허용 (쓰기 도구는 `AgentExecutor`가 `writeApproved` 별도 검사. `ReaAccessRules.TEACHER_WRITES`에 `POST /api/rea/*/agent/execute` 추가)
+- 강사: 읽기 도구 허용. AI 쓰기는 차단(서버 초안만 확인) — 승인·취소 API 는 `ReaAccessRules` 에 의해 403. 수동 업무 권한은 변경 없음
 - 학부모: 403 (읽기 명령도 Agent API 경유 불가)
 - 테넌트 격리: URL `{academyId}` ≠ 인증 사용자 학원 → 403
 
@@ -137,8 +137,9 @@ HTTP 요청 (X-Auth-Key)
 
 요청:
 ```json
-{ "command": "학생 등록 김철수", "writeApproved": true }
+{ "command": "학생 등록 김철수" }
 ```
+`writeApproved:true` 는 **400**(`WRITE_APPROVED_NOT_ACCEPTED`)으로 거부된다. 구조화 호출 `{ "tool": "...", "params": {...}, "idempotencyKey": "<uuid>" }` 도 지원한다. 쓰기 도구는 아래 "승인 필요" 응답(`plan`)을 돌려주며 데이터는 바뀌지 않는다. 승인·조회·취소 API 는 [agent-approval.md](agent-approval.md) 참조.
 
 응답:
 ```json
@@ -152,10 +153,12 @@ HTTP 요청 (X-Auth-Key)
 }
 ```
 
-승인 거부 예시:
+승인 필요 응답 예시 (쓰기 도구, 원장):
 ```json
 { "success": false, "toolUsed": "registerStudent", "requiresApproval": true,
-  "message": "쓰기 작업 승인이 필요합니다. writeApproved=true로 다시 요청하세요." }
+  "plan": { "planId": "…", "status": "PENDING", "planHash": "…", "expiresAt": "…",
+            "preview": { "summary": "새 학생을 등록합니다", "changes": { "학생 이름": "김철수" }, "notice": "…" } },
+  "message": "승인이 필요합니다. 아래 변경 내용을 확인하고 승인해 주세요. 승인 전에는 아무것도 저장되지 않습니다." }
 ```
 
 ### `GET /api/rea/{academyId}/agent/tools` (인증 필수)

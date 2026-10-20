@@ -16,6 +16,8 @@ public record AgentContext(
         ReaRole role,
         Long principalId,
         String principalName,
+        // 쓰기 승인 근거로 사용하지 않는다 (P1-a). AgentExecutor 는 이 값을 무시하고,
+        // 쓰기 도구는 서버 보관 계획 승인(AgentPlanService)으로만 실행한다. 하위 호환용 자리만 남겨 둔다.
         boolean writeApproved) {
 
     public AgentContext {

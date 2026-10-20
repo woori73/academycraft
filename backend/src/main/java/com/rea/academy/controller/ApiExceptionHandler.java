@@ -33,6 +33,12 @@ public class ApiExceptionHandler {
                 .body(Map.of("message", messageOf(e)));
     }
 
+    @ExceptionHandler(com.rea.academy.agent.plan.AgentPlanException.class)
+    public ResponseEntity<Map<String, String>> handleAgentPlan(com.rea.academy.agent.plan.AgentPlanException e) {
+        return ResponseEntity.status(e.status())
+                .body(Map.of("message", messageOf(e), "code", e.code()));
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, String>> handleBadRequest(IllegalArgumentException e) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
