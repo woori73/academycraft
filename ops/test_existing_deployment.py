@@ -8,6 +8,13 @@ spec=importlib.util.spec_from_file_location('existing',Path(__file__).with_name(
 ops=importlib.util.module_from_spec(spec);spec.loader.exec_module(ops)
 
 class Guards(unittest.TestCase):
+    def test_given_flyway_history_when_checked_then_v4_to_v6_allowed_and_others_rejected(self):
+        # given / when / then
+        self.assertIn(['1','2','3','4','5','6'], ops.KNOWN_SCHEMA_VERSIONS)
+        self.assertIn(['1','2','3','4','5'], ops.KNOWN_SCHEMA_VERSIONS)
+        self.assertNotIn(['1','2','3','4','5','6','7'], ops.KNOWN_SCHEMA_VERSIONS)
+        self.assertNotIn(['1','2','3'], ops.KNOWN_SCHEMA_VERSIONS)
+
     def binding(self,role='TUTOR',user=54,academy=7,member=9):
         return dict(userId=user,role=role,builditAcademyId=12,academyId=academy,memberId=member)
 

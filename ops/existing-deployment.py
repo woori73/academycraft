@@ -60,6 +60,10 @@ def health():
     return json.loads(body)['status']=='UP'
 
 
+# 허용 Flyway 이력: V4(구) / V5(연결 매핑) / V6(AI 승인 계획 테이블, 추가 전용). 그 외는 중단한다.
+KNOWN_SCHEMA_VERSIONS = (['1','2','3','4'], ['1','2','3','4','5'], ['1','2','3','4','5','6'])
+
+
 def write_env(path, updates):
     # Preserve every unrelated setting; no credentials are printed or passed through SSM arguments.
     lines=Path(path).read_text().splitlines()
@@ -149,7 +153,7 @@ def main():
         if hashlib.sha256(info[0].encode()).hexdigest() not in approved: raise ValueError('DB is not in verified new AWS account')
     active('f2r-app');active('buildit-wiki');active('academycraft')
     versions=client(academy_db,'SELECT version FROM flyway_schema_history WHERE success=1 ORDER BY installed_rank')
-    if versions not in (['1','2','3','4'],['1','2','3','4','5']): raise ValueError('Unexpected existing schema; no migration/downgrade permitted')
+    if versions not in KNOWN_SCHEMA_VERSIONS: raise ValueError('Unexpected existing schema; no migration/downgrade permitted')
     if mode=='inspect':
         # Output no password, tokens, auth keys, names, contact information or student records.
         result={
@@ -221,7 +225,7 @@ def main():
             time.sleep(3)
         else: raise ValueError('AcademyCraft health timeout')
         after=client(academy_db,'SELECT version FROM flyway_schema_history WHERE success=1 ORDER BY installed_rank')
-        if after != ['1','2','3','4','5']: raise ValueError('Unexpected schema after additive mapping migration')
+        if after not in KNOWN_SCHEMA_VERSIONS[1:]: raise ValueError('Unexpected schema after additive migration')
         if bootstrap:
             bindings=bootstrap_members(source,academy_db)
             validate_bindings(bindings,build_db,academy_db)

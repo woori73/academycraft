@@ -14,7 +14,7 @@ on:
         required: true
         default: timezone
         type: choice
-        options: [timezone, notice-census]
+        options: [timezone, notice-census, db-connections]
       confirm:
         description: '읽기 전용 점검 확인 문구. 정확히 READONLY 를 입력하세요'
         required: true
@@ -68,7 +68,7 @@ jobs:
           KIND: ${{ inputs.kind }}
         run: |
           set -euo pipefail
-          case "$KIND" in timezone|notice-census) ;; *) echo "::error::허용되지 않은 종류"; exit 1;; esac
+          case "$KIND" in timezone|notice-census|db-connections) ;; *) echo "::error::허용되지 않은 종류"; exit 1;; esac
           B64=$(base64 -w0 ops/diagnose-readonly.sh)
           CMD="echo $B64 | base64 -d | bash -s -- $KIND"
           PARAMS=$(jq -cn --arg c "$CMD" '{commands:[$c]}')
