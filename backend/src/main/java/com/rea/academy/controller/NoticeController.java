@@ -19,6 +19,7 @@ import java.util.List;
 public class NoticeController {
 
     private final NoticeService noticeService;
+    private final com.rea.academy.service.NoticeAccessGuard noticeAccessGuard;
 
     // ===== 작성 (관리자) =====
 
@@ -81,6 +82,7 @@ public class NoticeController {
             @PathVariable Long academyId,
             @PathVariable Long id,
             @RequestBody NoticeDto.UpdateRequest req) {
+        noticeAccessGuard.checkCanModify(academyId, id, com.rea.academy.security.AuthContextHolder.getOrNull());
         return ResponseEntity.ok(noticeService.update(academyId, id, req));
     }
 
@@ -89,6 +91,7 @@ public class NoticeController {
     public ResponseEntity<Void> delete(
             @PathVariable Long academyId,
             @PathVariable Long id) {
+        noticeAccessGuard.checkCanModify(academyId, id, com.rea.academy.security.AuthContextHolder.getOrNull());
         noticeService.delete(academyId, id);
         return ResponseEntity.noContent().build();
     }
