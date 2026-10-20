@@ -23,7 +23,16 @@ public enum AuditActionType {
     MEMBER_ROLE_CHANGED("권한 변경"),
     ACADEMY_INFO_UPDATED("학원 정보 수정"),
     BRANCH_CREATED("지점 등록"),
-    AGENT_TOOL_EXECUTED("에이전트 도구 실행");
+    AGENT_TOOL_EXECUTED("에이전트 도구 실행"),
+    /** AI 쓰기 승인(P1-a): 실행 계획 생애주기. 감사 detail 에는 입력 원문 대신 해시·요약만 남긴다. */
+    AGENT_PLAN_CREATED("AI 실행 계획 생성"),
+    AGENT_PLAN_APPROVED("AI 실행 계획 승인"),
+    AGENT_PLAN_EXECUTED("AI 실행 계획 실행 완료"),
+    AGENT_PLAN_FAILED("AI 실행 계획 실행 실패"),
+    AGENT_PLAN_REJECTED("AI 실행 계획 승인 거부"),
+    AGENT_PLAN_CANCELLED("AI 실행 계획 취소"),
+    AGENT_PLAN_EXPIRED("AI 실행 계획 만료"),
+    AGENT_PLAN_INVALIDATED("AI 실행 계획 무효화");
 
     private final String label;
 

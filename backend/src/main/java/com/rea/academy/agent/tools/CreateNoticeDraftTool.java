@@ -25,6 +25,7 @@ public class CreateNoticeDraftTool implements AgentTool {
     private static final String DRAFT_PREFIX = "[초안] ";
 
     private final ReaNoticeRepository noticeRepository;
+    private final com.rea.academy.domain.clazz.ReaClassRepository classRepository;
 
     @Override
     public String getName() {
@@ -78,5 +79,32 @@ public class CreateNoticeDraftTool implements AgentTool {
         result.put("target", classId == null ? "ALL" : String.valueOf(classId));
         result.put("draft", true);
         return result;
+    }
+
+    @Override
+    public Map<String, Object> preview(Map<String, Object> input, AgentContext ctx) {
+        String targetRaw = AgentUtils.requiredString(input, "target", "대상");
+        String title = AgentUtils.requiredString(input, "title", "제목");
+        String content = AgentUtils.requiredString(input, "content", "내용");
+        if (title.length() > 100) {
+            throw new IllegalArgumentException("공지 제목은 100자 이하여야 합니다.");
+        }
+        String targetLabel = "전체";
+        if (!"ALL".equalsIgnoreCase(targetRaw)) {
+            Long classId = AgentUtils.toLong(targetRaw, "대상(ALL 또는 반 ID)");
+            targetLabel = classRepository.findById(classId)
+                    .filter(c -> ctx.academyId().equals(c.getAcademyId()) && Boolean.TRUE.equals(c.getActive()))
+                    .map(c -> c.getName() + " (ID " + classId + ")")
+                    .orElseThrow(() -> new IllegalArgumentException("이 학원의 운영 중인 반이 아닙니다: " + classId));
+        }
+        Map<String, Object> changes = new LinkedHashMap<>();
+        changes.put("대상", targetLabel);
+        changes.put("제목", DRAFT_PREFIX + title);
+        changes.put("내용", content.length() > 300 ? content.substring(0, 300) + "…(이하 생략)" : content);
+        Map<String, Object> preview = new LinkedHashMap<>();
+        preview.put("summary", "공지 초안을 저장합니다");
+        preview.put("changes", changes);
+        preview.put("notice", "초안만 저장되며 학부모에게 알림은 발송되지 않습니다. 승인 전에는 아무것도 저장되지 않습니다.");
+        return preview;
     }
 }

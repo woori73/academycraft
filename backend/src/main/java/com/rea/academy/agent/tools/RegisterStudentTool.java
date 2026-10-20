@@ -25,6 +25,7 @@ public class RegisterStudentTool implements AgentTool {
 
     private final MemberService memberService;
     private final ClassService classService;
+    private final com.rea.academy.domain.clazz.ReaClassRepository classRepository;
 
     @Override
     public String getName() {
@@ -82,5 +83,41 @@ public class RegisterStudentTool implements AgentTool {
         result.put("classId", classId);
         result.put("className", assignedClassName);
         return result;
+    }
+
+    @Override
+    public Map<String, Object> preview(Map<String, Object> input, AgentContext ctx) {
+        String name = AgentUtils.requiredString(input, "name", "학생 이름");
+        if (name.length() > 50) {
+            throw new IllegalArgumentException("학생 이름은 50자 이하여야 합니다.");
+        }
+        Long classId = AgentUtils.optionalLong(input, "classId");
+        String className = null;
+        if (classId != null) {
+            className = classRepository.findById(classId)
+                    .filter(c -> ctx.academyId().equals(c.getAcademyId()) && Boolean.TRUE.equals(c.getActive()))
+                    .map(c -> c.getName())
+                    .orElseThrow(() -> new IllegalArgumentException("이 학원의 운영 중인 반이 아닙니다: " + classId));
+        }
+        Map<String, Object> changes = new LinkedHashMap<>();
+        changes.put("학생 이름", name);
+        putIfPresent(changes, "학년", AgentUtils.optionalString(input, "grade"));
+        putIfPresent(changes, "학교", AgentUtils.optionalString(input, "schoolName"));
+        putIfPresent(changes, "학부모", AgentUtils.optionalString(input, "parentName"));
+        putIfPresent(changes, "학부모 연락처", AgentUtils.optionalString(input, "parentPhone"));
+        if (className != null) {
+            changes.put("배정할 반", className + " (ID " + classId + ")");
+        }
+        Map<String, Object> preview = new LinkedHashMap<>();
+        preview.put("summary", "새 학생을 등록합니다");
+        preview.put("changes", changes);
+        preview.put("notice", "승인 전에는 아무것도 저장되지 않습니다. 학생 인증키는 승인 직후 한 번만 표시됩니다.");
+        return preview;
+    }
+
+    private static void putIfPresent(Map<String, Object> target, String key, String value) {
+        if (value != null) {
+            target.put(key, value);
+        }
     }
 }

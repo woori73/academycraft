@@ -37,4 +37,21 @@ public interface AgentTool {
      * @throws IllegalArgumentException 입력 검증 실패 시
      */
     Map<String, Object> execute(Map<String, Object> input, AgentContext ctx);
+
+    /**
+     * 쓰기 도구의 변경 미리보기 (P1-a). 읽기 전용이며 데이터를 바꾸지 않는다.
+     *
+     * <ul>
+     *   <li>입력을 검증하고, 참조하는 학생·반이 {@code ctx.academyId()} 소속인지 서버가 직접 조회해 확인한다.
+     *   <li>반환값은 승인 화면에 그대로 표시되므로 모델이 만든 문장이 아니라 <b>서버가 입력에서 생성</b>한 값만 담는다.
+     *   <li>시각 등 호출마다 달라지는 값은 넣지 않는다 (승인 시 재생성한 미리보기와 비교해 대상 변경을 탐지한다).
+     * </ul>
+     *
+     * 쓰기 도구는 반드시 구현해야 한다. 구현하지 않으면 계획을 만들 수 없다(fail-closed).
+     *
+     * @throws IllegalArgumentException 입력·대상 검증 실패 시
+     */
+    default Map<String, Object> preview(Map<String, Object> input, AgentContext ctx) {
+        throw new UnsupportedOperationException("쓰기 도구는 preview 를 구현해야 합니다: " + getName());
+    }
 }
