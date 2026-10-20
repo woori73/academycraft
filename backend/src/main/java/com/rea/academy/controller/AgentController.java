@@ -87,10 +87,23 @@ public class AgentController {
         return new AgentContext(auth.principalType(), academyId, auth.role(), auth.principalId(), auth.name(), false);
     }
 
-    /** BuildIt 게이트웨이 경유 여부와 BuildIt 역할 (승인 시 연결 변경 탐지용). 클라이언트 입력이 아니다. */
+    /**
+     * 인증 경로 문자열: 직접 로그인은 "DIRECT", BuildIt 게이트웨이 경유는 BuildIt 역할·사용자 ID·학원 ID 를 포함한다.
+     * 값은 서명 검증을 통과한 게이트웨이 필터가 설정한 요청 속성이며 클라이언트 입력이 아니다.
+     * 게이트웨이 경유인데 속성이 빠져 있으면(필터·컨트롤러 버전 불일치 등) 안전하게 실패한다.
+     */
     private static String authSource(HttpServletRequest http) {
         Object role = http.getAttribute("buildit.role");
-        return role == null ? "DIRECT" : "BUILDIT:" + role;
+        if (role == null) {
+            return "DIRECT";
+        }
+        Object userId = http.getAttribute("buildit.userId");
+        Object academyId = http.getAttribute("buildit.academyId");
+        if (userId == null || academyId == null) {
+            throw new AgentPlanException(HttpStatus.FORBIDDEN, "GATEWAY_CONTEXT_INCOMPLETE",
+                    "게이트웨이 연결 정보가 불완전해 요청을 처리하지 않았습니다.");
+        }
+        return "BUILDIT:" + role + ":u" + userId + ":a" + academyId;
     }
 
     /**

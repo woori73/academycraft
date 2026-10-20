@@ -115,10 +115,43 @@
 | `rea.agent.approval.max-creates-per-minute` | `10` | 원장당 분당 생성 상한 |
 | `rea.agent.approval.executing-timeout-minutes` | `5` | 이 시간 넘게 EXECUTING 이면 결과 불명 실패로 표시 |
 
-## 7. 한계와 후속 (이 PR 범위 밖)
-- **P1-b**: BuildIt `AcademyCraftGateway` 와 AcademyCraft `BuildItGatewayFilter` 의 허용 목록에 `/agent` 정확 경로 5개를 양쪽 동시에 추가(별도 승인).
-- 연결 지문은 현재 (주체 종류·주체 ID·학원·역할·인증 경로·BuildIt 역할)로 만든다. 게이트웨이 필터가 BuildIt 사용자 ID 를 요청 속성으로 노출하지 않아 포함하지 못했다 → P1-b 에서 속성을 추가하면 지문에 넣는다.
+## 7. 한계와 후속
+- P1-b(게이트웨이 정확 경로·연결 지문 보강)는 §8 에 기술한다. BuildIt 쪽 변경은 BuildIt 저장소의 별도 PR 이다.
 - 게이트웨이 nonce 는 프로세스 메모리다. 승인 프로토콜은 이에 의존하지 않는다(만료·CAS·해시).
 - `registerStudent` 결과의 학생 인증키는 승인 직후 응답에만 표시된다. 응답을 놓치면 학생 상세 화면에서 확인해야 한다.
 - 강사 AI 쓰기 개방은 도구별 정책 결정 후(현재 전면 차단). 반 생성·종료·출결·상담 쓰기 도구는 이 승인 구조 위에서 후속(P3)으로 추가한다.
 - 과거 검증 기록 `phase5-task3-agent.md` 는 `writeApproved` 시절의 동작을 기록한 역사 문서다.
+
+## 8. P1-b — BuildIt 게이트웨이 연동 (AcademyCraft 측)
+### 허용 경로 (정확 일치 5개, `BuildItGatewayFilter`)
+| 메서드 | 경로 |
+|--------|------|
+| GET | `/api/rea/{academyId}/agent/tools` |
+| POST | `/api/rea/{academyId}/agent/execute` |
+| GET | `/api/rea/{academyId}/agent/plans/{uuid}` |
+| POST | `/api/rea/{academyId}/agent/plans/{uuid}/approve` |
+| POST | `/api/rea/{academyId}/agent/plans/{uuid}/cancel` |
+
+- `{academyId}` 는 서명된 신원과 연결(binding)로 결정된 AcademyCraft 학원과 같아야 한다(다르면 기존 규칙대로 403). `{uuid}` 는 36자 UUID 형식.
+- 와일드카드·접미 경로·후행 `/`·대소문자 변형·다른 메서드는 허용되지 않는다. STUDENT 연결은 에이전트 경로 전체가 거부된다.
+- **경로 허용은 권한 검증을 대체하지 않는다.** 허용된 뒤에도 서명·30초 시간창·nonce·연결·학원 활성·내부 역할(`ReaAccessRules`)·테넌트 인터셉터·P1-a 승인 프로토콜이 모두 그대로 적용된다. 원장 권한 회원에 연결된 사용자만 AI 쓰기·승인·취소가 가능하고, 강사 회원에 연결된 사용자는 조회·초안만(승인·취소 403)이다.
+
+### 연결 지문 보강
+게이트웨이 필터가 **서명 검증을 통과한 뒤에만** 요청 속성 `buildit.userId`(BuildIt 사용자 ID)와 `buildit.academyId`(BuildIt 학원 ID)를 설정한다(클라이언트 헤더가 아님). 컨트롤러는 인증 경로 문자열을 `BUILDIT:{역할}:u{사용자ID}:a{BuildIt학원ID}` 로 만들어 계획 지문에 넣는다. 승인 시 사용자·학원·역할·인증 경로 중 하나라도 달라지면 `CONNECTION_CHANGED` 로 계획이 무효 처리된다. 게이트웨이 경유인데 속성이 없으면 `403 GATEWAY_CONTEXT_INCOMPLETE` 로 안전하게 실패한다.
+
+### 버전 불일치 시 안전하게 실패하는 설계
+BuildIt 이 서명된 신원에 `agentProtocol`(현재 `1`)을 담아 보낸다.
+
+| BuildIt | AcademyCraft | 동작 |
+|---------|--------------|------|
+| 신규(P1-b) | 신규 | 정상 |
+| 신규 | **이전**(P1-a 이하) | 이전 AcademyCraft 의 허용 목록에 `/agent` 가 없어 403. 신원 JSON 의 모르는 필드(`agentProtocol`)는 운영 Spring JSON 매퍼가 무시한다(테스트로 고정). 기존 업무 경로는 영향 없음 |
+| **이전** | 신규 | BuildIt 이 `/agent` 를 허용하지 않아 도달 불가. 혹시 도달해도 `agentProtocol` 이 없어 `403 AGENT_PROTOCOL_MISMATCH` |
+| 서명 알고리즘 불일치 | — | 서명 검증 실패 401. 양쪽 저장소가 같은 기준값(golden vector) 테스트를 고정한다 |
+
+원칙: 한쪽만 열린 상태에서도 **쓰기가 실행되는 경우는 없고**, 에이전트 경로만 403 이 되며 기존 업무 경로는 유지된다.
+
+### 배포 순서 (운영 적용은 별도 승인)
+1. 백업 후 AcademyCraft 배포(V6 적용, 새 경로 허용 — 이 시점에는 BuildIt 이 아직 호출하지 않음)
+2. BuildIt 배포(정확 경로 5개 허용 + `agentProtocol` 전송)
+3. 문제 시: ① `rea.agent.approval.enabled=false`(쓰기만 중지) ② BuildIt 롤백(경로가 다시 막힘) ③ AcademyCraft 롤백(§5, V6 테이블은 무시됨)
