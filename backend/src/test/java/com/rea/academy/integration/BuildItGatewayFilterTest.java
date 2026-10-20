@@ -39,6 +39,13 @@ class BuildItGatewayFilterTest {
     String assertion=Base64.getUrlEncoder().withoutPadding().encodeToString(json.writeValueAsBytes(new BuildItGatewayFilter.Identity(user,role,owner,time,UUID.randomUUID().toString())));
     req.addHeader("X-BuildIt-Assertion",assertion);req.addHeader("X-BuildIt-Signature",BuildItGatewayFilter.sign(SECRET,method,path,assertion,new byte[0]));return req;
   }
+  /** 프로토콜(agentProtocol)·본문을 지정하는 서명 요청. 본문 해시를 서명에 포함한다. */
+  MockHttpServletRequest agentRequest(Long user,String role,Long owner,String method,String path,Integer protocol,byte[] body) throws Exception {
+    var req=new MockHttpServletRequest(method,path);req.setContent(body);
+    String assertion=Base64.getUrlEncoder().withoutPadding().encodeToString(json.writeValueAsBytes(new BuildItGatewayFilter.Identity(user,role,owner,Instant.now().getEpochSecond(),UUID.randomUUID().toString(),protocol)));
+    req.addHeader("X-BuildIt-Assertion",assertion);req.addHeader("X-BuildIt-Signature",BuildItGatewayFilter.sign(SECRET,method,path,assertion,body));return req;
+  }
+  static final String PLAN="11111111-1111-1111-1111-111111111111";
   void expect(Long user,String role,Long owner,String method,String path,int status) throws Exception {
     var response=new MockHttpServletResponse();
     filter.doFilter(request(user,role,owner,method,path,Instant.now().getEpochSecond()),response,(req,res)->{
@@ -65,5 +72,80 @@ class BuildItGatewayFilterTest {
     var req=request(54L,"TUTOR",12L,"POST","/api/rea/7/students",Instant.now().getEpochSecond());byte[] body="{\"name\":\"QA\"}".getBytes(StandardCharsets.UTF_8);req.setContent(body);
     req.removeHeader("X-BuildIt-Signature"); req.addHeader("X-BuildIt-Signature",BuildItGatewayFilter.sign(SECRET,"POST",req.getRequestURI(),req.getHeader("X-BuildIt-Assertion"),body));
     assertThrows(jakarta.servlet.ServletException.class,()->filter.doFilter(req,new MockHttpServletResponse(),(r,s)->{assertArrayEquals(body,r.getInputStream().readAllBytes());throw new jakarta.servlet.ServletException("test");}));assertNull(AuthContextHolder.getOrNull());
+  }
+
+  // ===== P1-b: 에이전트 정확 경로 =====
+
+  // given 원장 권한 회원에 연결된 TUTOR / when 프로토콜 1로 에이전트 경로를 호출하면 / then 통과하고 서명 검증된 연결 속성이 노출된다
+  @Test void agentPathPassesWithProtocolAndExposesSignedConnectionAttributes() throws Exception {
+    var req=agentRequest(54L,"TUTOR",12L,"POST","/api/rea/7/agent/execute",1,"{\"command\":\"오늘 결석 학생\",\"idempotencyKey\":\"x\"}".getBytes(StandardCharsets.UTF_8));
+    var response=new MockHttpServletResponse();var seen=new Object[2];
+    filter.doFilter(req,response,(r,s)->{seen[0]=r.getAttribute("buildit.userId");seen[1]=r.getAttribute("buildit.academyId");((jakarta.servlet.http.HttpServletResponse)s).setStatus(204);});
+    assertEquals(204,response.getStatus()); assertEquals(54L,seen[0]); assertEquals(12L,seen[1]);
+  }
+
+  // given 이전 버전 BuildIt(프로토콜 없음) / when 에이전트 경로를 호출하면 / then 403 AGENT_PROTOCOL_MISMATCH, 같은 요청자의 기존 경로는 영향 없음
+  @Test void agentPathFailsSafelyOnProtocolMismatchWhileLegacyPathsStillWork() throws Exception {
+    for (Integer protocol : new Integer[]{null,0,2}) {
+      var response=new MockHttpServletResponse();
+      filter.doFilter(agentRequest(54L,"TUTOR",12L,"GET","/api/rea/7/agent/tools",protocol,new byte[0]),response,(r,s)->fail("에이전트 경로가 통과하면 안 된다"));
+      assertEquals(403,response.getStatus()); assertTrue(response.getContentAsString().contains("AGENT_PROTOCOL_MISMATCH"));
+    }
+    var legacy=new MockHttpServletResponse();
+    filter.doFilter(agentRequest(54L,"TUTOR",12L,"GET","/api/rea/7/students",null,new byte[0]),legacy,(r,s)->((jakarta.servlet.http.HttpServletResponse)s).setStatus(204));
+    assertEquals(204,legacy.getStatus());
+  }
+
+  // given 에이전트 정확 경로 밖의 요청 / when 호출하면 / then 프로토콜이 맞아도 403
+  @Test void nonExactAgentPathsDeniedEvenWithProtocol() throws Exception {
+    for (String[] c : new String[][]{{"GET","/api/rea/7/agent"},{"POST","/api/rea/7/agent/tools"},{"GET","/api/rea/7/agent/plans/"+PLAN+"/approve"},{"DELETE","/api/rea/7/agent/plans/"+PLAN},{"POST","/api/rea/7/agent/plans/not-a-uuid/approve"}}) {
+      var response=new MockHttpServletResponse();
+      filter.doFilter(agentRequest(54L,"TUTOR",12L,c[0],c[1],1,new byte[0]),response,(r,s)->fail("통과하면 안 된다: "+c[1]));
+      assertEquals(403,response.getStatus(),c[0]+" "+c[1]);
+    }
+  }
+
+  // given 연결되지 않은 학원 / 학생 연결 / when 에이전트 경로를 호출하면 / then 403 (타 학원·학생 차단)
+  @Test void agentPathBlockedForOtherAcademyStudentAndUnbound() throws Exception {
+    for (Object[] c : new Object[][]{{81L,"TUTOR",null,"/api/rea/8/agent/tools"},{80L,"STUDENT",null,"/api/rea/7/agent/tools"},{99L,"ADMIN",null,"/api/rea/7/agent/tools"},{54L,"ADMIN",12L,"/api/rea/7/agent/tools"}}) {
+      var response=new MockHttpServletResponse();
+      filter.doFilter(agentRequest((Long)c[0],(String)c[1],(Long)c[2],"GET",(String)c[3],1,new byte[0]),response,(r,s)->fail("통과하면 안 된다: "+c[3]));
+      assertEquals(403,response.getStatus(),String.valueOf(c[3]));
+    }
+  }
+
+  // given 서명된 요청 / when 본문(idempotencyKey 포함)이 바뀌거나 재전송되면 / then 401
+  @Test void agentRequestBodyIsSignedAndReplayRejected() throws Exception {
+    var body="{\"tool\":\"registerStudent\",\"idempotencyKey\":\"a\"}".getBytes(StandardCharsets.UTF_8);
+    var tampered=agentRequest(54L,"TUTOR",12L,"POST","/api/rea/7/agent/execute",1,body);
+    tampered.setContent("{\"tool\":\"registerStudent\",\"idempotencyKey\":\"b\"}".getBytes(StandardCharsets.UTF_8));
+    var r1=new MockHttpServletResponse();filter.doFilter(tampered,r1,(r,s)->fail());assertEquals(401,r1.getStatus());
+    var original=agentRequest(54L,"TUTOR",12L,"POST","/api/rea/7/agent/execute",1,body);
+    var ok=new MockHttpServletResponse();filter.doFilter(original,ok,(r,s)->((jakarta.servlet.http.HttpServletResponse)s).setStatus(204));assertEquals(204,ok.getStatus());
+    var replay=new MockHttpServletResponse();filter.doFilter(original,replay,(r,s)->fail());assertEquals(401,replay.getStatus());
+  }
+
+  // given 강사 회원에 연결된 TUTOR / when 승인·취소를 호출하면 / then 경로는 통과하지만 기존 역할 규칙이 403, 조회·읽기 실행은 통과
+  @Test void teacherBoundTutorCannotApproveOrCancelButCanReadAndExecute() throws Exception {
+    for (String path : new String[]{"/api/rea/7/agent/plans/"+PLAN+"/approve","/api/rea/7/agent/plans/"+PLAN+"/cancel"}) {
+      assertThrows(ReaForbiddenException.class,()->filter.doFilter(agentRequest(81L,"TUTOR",null,"POST",path,1,new byte[0]),new MockHttpServletResponse(),
+          (r,s)->ReaAccessRules.check((jakarta.servlet.http.HttpServletRequest)r,AuthContextHolder.getOrNull())),path);
+    }
+    for (String[] c : new String[][]{{"GET","/api/rea/7/agent/tools"},{"GET","/api/rea/7/agent/plans/"+PLAN},{"POST","/api/rea/7/agent/execute"}}) {
+      var response=new MockHttpServletResponse();
+      filter.doFilter(agentRequest(81L,"TUTOR",null,c[0],c[1],1,new byte[0]),response,(r,s)->{
+        ReaAccessRules.check((jakarta.servlet.http.HttpServletRequest)r,AuthContextHolder.getOrNull());((jakarta.servlet.http.HttpServletResponse)s).setStatus(204);});
+      assertEquals(204,response.getStatus(),c[1]);
+    }
+  }
+
+  // given 원장 권한 회원에 연결된 TUTOR / when 승인·취소를 호출하면 / then 기존 역할 규칙을 통과한다 (OWNER·TEACHER 분리 유지)
+  @Test void ownerBoundTutorPassesApproveAndCancelRules() throws Exception {
+    for (String suffix : new String[]{"/approve","/cancel"}) {
+      var response=new MockHttpServletResponse();
+      filter.doFilter(agentRequest(54L,"TUTOR",12L,"POST","/api/rea/7/agent/plans/"+PLAN+suffix,1,new byte[0]),response,(r,s)->{
+        ReaAccessRules.check((jakarta.servlet.http.HttpServletRequest)r,AuthContextHolder.getOrNull());((jakarta.servlet.http.HttpServletResponse)s).setStatus(204);});
+      assertEquals(204,response.getStatus(),suffix);
+    }
   }
 }
