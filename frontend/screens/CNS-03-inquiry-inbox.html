@@ -62,8 +62,8 @@
 <body>
 <nav aria-label="Feel2Real 홈" style="position:relative;z-index:1;margin:8px 0;"><a data-feel2real-home href="https://feel2real.co.kr/" style="display:inline-flex;align-items:center;min-height:44px;padding:0 12px;color:#0066cc;white-space:nowrap;">홈으로</a></nav>
 <div class="header">
-  <h1>문의 모음</h1>
-  <p style="color:#666;font-size:13px;margin-top:4px;">REA 5단계 구현 - CNS-03 · 학부모 문의 확인·답변 (원장·강사용)</p>
+  <h1>상담 기록</h1>
+  <p style="color:#666;font-size:13px;margin-top:4px;">REA 5단계 구현 - CNS-03 · 학부모 문의·학원 발신 상담 확인·답변 (원장·강사용)</p>
 </div>
 
 <div class="login">
@@ -71,6 +71,7 @@
   <button onclick="loadList()">조회</button>
 </div>
 
+<p><a class="btn" href="CNS-04-news-send.html">+ 상담 기록 작성</a></p>
 <div class="tabs" id="tabs">
   <button class="tab on" data-st="" onclick="setStatus('')">전체</button>
   <button class="tab" data-st="OPEN" onclick="setStatus('OPEN')">미답변</button>
@@ -84,6 +85,7 @@
   <div class="list" id="list"></div>
   <div class="detail" id="detail" style="display:none">
     <h3 id="d-title" style="margin-bottom:6px"></h3>
+    <p><a id="thread-detail" href="CNS-05-consultation-detail.html">상세·상담 종료</a></p>
     <div id="d-meta" style="color:#666;font-size:12px;margin-bottom:12px"></div>
     <div id="d-msgs"></div>
     <div class="reply">
@@ -121,8 +123,8 @@ function setStatus(s) {
 
 async function loadList() {
   if (!memberId()) return;
-  let url = `/@academy/consultations?type=INQUIRY`;
-  if (statusFilter) url += `&status=${statusFilter}`;
+  let url = `/@academy/consultations`;
+  if (statusFilter) url += `?status=${statusFilter}`;
   const res = await apiGet(url);
   const data = await res.json();
   if (!res.ok) { showMsg(data.message || '조회 실패', false); return; }
@@ -145,6 +147,7 @@ async function loadList() {
 }
 
 async function selectThread(id) {
+  document.getElementById('thread-detail').href = `CNS-05-consultation-detail.html?id=${encodeURIComponent(id)}`;
   selectedId = id;
   const res = await apiGet(`/@academy/consultations/${id}`);
   const c = await res.json();
