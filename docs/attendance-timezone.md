@@ -1,6 +1,6 @@
 # 출결 시간대(UTC/KST) 점검 — 코드 분석과 대응안
 
-> 2026-10-20 · 기준 main `6616779b`. 운영 값은 **아직 조회하지 못했다**(운영 접근 수단 없음, `ops/diagnose-readonly.sh timezone`로 승인 후 확인). 이 문서는 코드 근거와 영향·수정안이다.
+> 2026-10-20 · 기준 main `6616779b`. 운영 값은 **아직 조회하지 못했다**(운영 접근 수단 없음, `deploy-academycraft.yml`의 `diagnose-timezone`으로 승인 후 확인). 이 문서는 코드 근거와 영향·수정안이다.
 
 ## 1. 코드 근거
 - 시각 저장·"오늘" 판정은 전부 JVM 기본 시간대를 쓴다: `AttendanceService`(`LocalDateTime.now()` 82·139행, `LocalDate.now()` 124·194행), `ReaAttendanceEvent`/`Correction`/`Setting`, `NoticeService`·`LearningService`·`OpsService`·에이전트 도구 등. `Clock`·`ZoneId` 사용 없음, `-Duser.timezone`·`jdbc.time_zone` 설정 없음.
@@ -26,4 +26,4 @@
 4. 화면 날짜 기본값은 `toISOString()` 대신 로컬 날짜 계산으로 별도 수정.
 
 ## 4. 점검 실행(읽기 전용, 승인 필요)
-`.github/workflows/diagnose-academycraft-readonly.yml`(production 승인) → `kind=timezone`: 호스트 `timedatectl`, JVM `TZ`/`-Duser.timezone`, DB `NOW()`·`@@session.time_zone`·`@@global.time_zone`, 출결 시각 분포(집계만). 점검용 출결 기록 생성은 별도 승인 전까지 하지 않는다.
+`deploy-academycraft.yml`을 `operation=diagnose-timezone`, `confirm=READONLY`로 실행(production 승인; 배포 역할 신뢰 정책이 이 워크플로 파일만 허용하므로 별도 진단 워크플로는 OIDC 거부됨): 호스트 `timedatectl`, JVM `TZ`/`-Duser.timezone`, DB `NOW()`·`@@session.time_zone`·`@@global.time_zone`, 출결 시각 분포(집계만). 점검용 출결 기록 생성은 별도 승인 전까지 하지 않는다.

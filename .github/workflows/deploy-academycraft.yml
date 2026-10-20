@@ -13,11 +13,11 @@ on:
   workflow_dispatch:
     inputs:
       operation:
-        description: 'inspect=소속 읽기 전용 확인, update=기존 배포 업데이트, initial=최초 설치'
+        description: 'inspect=소속 읽기 전용 확인, update=기존 배포 업데이트, initial=최초 설치, diagnose-*=읽기 전용 점검(확인 문구 READONLY)'
         required: true
         default: inspect
         type: choice
-        options: [inspect, update, initial]
+        options: [inspect, update, initial, diagnose-timezone, diagnose-notices, diagnose-connections]
       existing_command_id:
         description: '기존 SSM 명령 결과만 조회 (새 서버 작업 실행 안 함)'
         required: false
@@ -88,6 +88,11 @@ jobs:
             [ "$CONFIRM" = INSPECT ] || exit 1
             exit 0
           fi
+          case "$OPERATION" in
+            diagnose-timezone|diagnose-notices|diagnose-connections)
+              [ "$CONFIRM" = READONLY ] || { echo "::error::읽기 전용 점검 확인 문구(READONLY) 불일치"; exit 1; }
+              exit 0 ;;
+          esac
           [ "$OPERATION" = update ] || [ "$OPERATION" = initial ] || exit 1
           if [ "$CONFIRM" != "DEPLOY" ]; then
             echo "::error::배포 확인 문구가 일치하지 않습니다. 실행을 중단합니다."
@@ -873,6 +878,54 @@ jobs:
           이상 발생 시 `sudo systemctl stop academycraft` 후 보고하세요.
           EOF
 
+
+  # ------------------------------------------------------------------
+  # 읽기 전용 점검: 배포 역할의 신뢰 정책이 job_workflow_ref 를 이 파일로 고정하므로
+  # IAM 을 넓히지 않고 이 워크플로 안에서 실행한다. SELECT 집계·설정값만, 쓰기·재시작 없음.
+  # ------------------------------------------------------------------
+  diagnose:
+    if: startsWith(inputs.operation, 'diagnose-')
+    name: 읽기 전용 점검 (${{ inputs.operation }})
+    needs: guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: 신규 AWS 계정 강제 확인
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$(aws sts get-caller-identity --query Account --output text)" = 425805163960 ]
+      - name: 읽기 전용 점검 실행 (SSM, 고정 종류)
+        shell: bash
+        env:
+          OPERATION: ${{ inputs.operation }}
+        run: |
+          set -euo pipefail
+          case "$OPERATION" in
+            diagnose-timezone) KIND=timezone ;;
+            diagnose-notices) KIND=notice-census ;;
+            diagnose-connections) KIND=db-connections ;;
+            *) echo "::error::허용되지 않은 점검"; exit 1 ;;
+          esac
+          B64=$(base64 -w0 ops/diagnose-readonly.sh)
+          PARAMS=$(jq -cn --arg c "echo $B64 | base64 -d | bash -s -- $KIND" '{commands:[$c]}')
+          CMD_ID=$(aws ssm send-command --instance-ids "$EC2_INSTANCE_ID" --document-name AWS-RunShellScript --parameters "$PARAMS" --query Command.CommandId --output text)
+          echo "SSM Command ID: $CMD_ID"
+          STATUS=""
+          for _ in $(seq 1 30); do
+            STATUS=$(aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$EC2_INSTANCE_ID" --query Status --output text 2>/dev/null || echo Pending)
+            case "$STATUS" in Success|Failed|Cancelled|TimedOut) break;; esac
+            sleep 5
+          done
+          aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$EC2_INSTANCE_ID" --output json \
+            | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("StandardOutputContent","")); print("STDERR:", d.get("StandardErrorContent","")[:2000])'
+          [ "$STATUS" = Success ] || { echo "::error::점검 실패 (Status=$STATUS)"; exit 1; }
 
   existing:
     name: 기존 배포 점검·업데이트 (삭제·초기화 없음)
