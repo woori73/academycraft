@@ -1,5 +1,6 @@
 package com.rea.academy.agent.plan;
 
+import com.rea.academy.common.ReaTime;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.rea.academy.agent.AgentContext;
 import com.rea.academy.agent.AgentDispatcher;
@@ -238,9 +239,9 @@ class AgentApprovalApiTest extends AgentApprovalTestBase {
         JsonNode plan = registerPlan("만료학생");
         String id = plan.get("planId").asText();
         LocalDateTime expires = LocalDateTime.parse(plan.get("expiresAt").asText());
-        assertThat(expires).isAfter(LocalDateTime.now().plusMinutes(9)).isBefore(LocalDateTime.now().plusMinutes(11));
+        assertThat(expires).isAfter(ReaTime.now().plusMinutes(9)).isBefore(ReaTime.now().plusMinutes(11));
         jdbc.update("update rea_agent_plans set expires_at = ? where plan_id = ?",
-                Timestamp.valueOf(LocalDateTime.now().minusMinutes(1)), id);
+                Timestamp.valueOf(ReaTime.now().minusMinutes(1)), id);
 
         MvcResult r = approve(ownerKey, academyId, id, plan.get("planHash").asText());
 
@@ -602,7 +603,7 @@ class AgentApprovalApiTest extends AgentApprovalTestBase {
         JsonNode plan = registerPlan("중단학생");
         String id = plan.get("planId").asText();
         jdbc.update("update rea_agent_plans set status = 'EXECUTING', approved_at = ?, approved_by = ? where plan_id = ?",
-                Timestamp.valueOf(LocalDateTime.now().minusMinutes(30)), ownerId, id);
+                Timestamp.valueOf(ReaTime.now().minusMinutes(30)), ownerId, id);
 
         JsonNode view = body(getPlan(ownerKey, academyId, id));
         MvcResult retry = approve(ownerKey, academyId, id, plan.get("planHash").asText());

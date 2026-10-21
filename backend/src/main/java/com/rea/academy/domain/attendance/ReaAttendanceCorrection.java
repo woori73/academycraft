@@ -1,5 +1,6 @@
 package com.rea.academy.domain.attendance;
 
+import com.rea.academy.common.ReaTime;
 import jakarta.persistence.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -73,7 +74,7 @@ public class ReaAttendanceCorrection {
     @PrePersist
     protected void onCreate() {
         if (this.correctedAt == null) {
-            this.correctedAt = LocalDateTime.now();
+            this.correctedAt = ReaTime.now();
         }
     }
 }

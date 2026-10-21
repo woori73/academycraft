@@ -1,5 +1,6 @@
 package com.rea.academy.domain.admin;
 
+import com.rea.academy.common.ReaTime;
 import jakarta.persistence.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -64,6 +65,6 @@ public class ReaAuditLog {
 
     @PrePersist
     protected void onCreate() {
-        this.createdAt = LocalDateTime.now();
+        this.createdAt = ReaTime.now();
     }
 }

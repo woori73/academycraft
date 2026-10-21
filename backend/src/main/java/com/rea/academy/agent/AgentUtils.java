@@ -1,5 +1,6 @@
 package com.rea.academy.agent;
 
+import com.rea.academy.common.ReaTime;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
@@ -70,9 +71,9 @@ public final class AgentUtils {
         }
         String s = raw.toString().trim();
         return switch (s) {
-            case "오늘" -> LocalDate.now();
-            case "어제" -> LocalDate.now().minusDays(1);
-            case "내일" -> LocalDate.now().plusDays(1);
+            case "오늘" -> ReaTime.today();
+            case "어제" -> ReaTime.today().minusDays(1);
+            case "내일" -> ReaTime.today().plusDays(1);
             default -> {
                 try {
                     yield LocalDate.parse(s, DateTimeFormatter.ISO_LOCAL_DATE);

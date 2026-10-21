@@ -1,5 +1,6 @@
 package com.rea.academy.service;
 
+import com.rea.academy.common.ReaTime;
 import com.rea.academy.domain.attendance.AttendanceEventType;
 import com.rea.academy.domain.attendance.ReaAttendanceEvent;
 import com.rea.academy.domain.attendance.ReaAttendanceEventRepository;
@@ -247,7 +248,7 @@ public class LearningService {
             throw new IllegalArgumentException("진도율은 0~100 사이여야 합니다.");
         }
         LocalDate recordedDate = req.getRecordedDate() == null || req.getRecordedDate().isBlank()
-                ? LocalDate.now()
+                ? ReaTime.today()
                 : parseDate(req.getRecordedDate(), "기록 일자");
 
         ReaProgress progress = progressRepository.save(ReaProgress.builder()
@@ -294,7 +295,7 @@ public class LearningService {
             throw new IllegalArgumentException("점수는 0 이상 만점 이하여야 합니다.");
         }
         LocalDate examDate = req.getExamDate() == null || req.getExamDate().isBlank()
-                ? LocalDate.now()
+                ? ReaTime.today()
                 : parseDate(req.getExamDate(), "시험 일자");
 
         ReaGrade grade = gradeRepository.save(ReaGrade.builder()
@@ -381,7 +382,7 @@ public class LearningService {
                                 .map(this::toProgressResponse).collect(Collectors.toList()))
                         .build())
                 .attendanceSummary(buildAttendanceSummary(academyId, student.getId()))
-                .generatedAt(LocalDateTime.now())
+                .generatedAt(ReaTime.now())
                 .build();
     }
 
@@ -431,8 +432,8 @@ public class LearningService {
 
     private LearningDto.AttendanceSummary buildAttendanceSummary(Long academyId, Long studentId) {
         int periodDays = 30;
-        LocalDateTime to = LocalDateTime.now();
-        LocalDateTime from = LocalDate.now().minusDays(periodDays - 1).atStartOfDay();
+        LocalDateTime to = ReaTime.now();
+        LocalDateTime from = ReaTime.today().minusDays(periodDays - 1).atStartOfDay();
         List<ReaAttendanceEvent> events = attendanceEventRepository
                 .findByAcademyIdAndStudentIdAndOccurredAtBetweenOrderByOccurredAtAsc(
                         academyId, studentId, from, to);

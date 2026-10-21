@@ -87,6 +87,28 @@ class AttendanceServiceTest {
         return AttendanceDto.KeypadRequest.builder().authKey(authKey).build();
     }
 
+    // ===== 시간대 원칙: 저장·응답 시각은 JVM 시간대와 무관하게 한국 시각 =====
+
+    @Test
+    @DisplayName("JVM 기본 시간대가 UTC여도 출결 기록 시각은 한국 시각으로 저장·응답된다")
+    void givenUtcJvm_whenRecordAttendance_thenStoredAndReturnedInKoreanTime() {
+        // given
+        java.util.TimeZone original = java.util.TimeZone.getDefault();
+        java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("UTC"));
+        try {
+            // when
+            AttendanceDto.CheckResponse res = attendanceService.keypadCheck(ACADEMY, keypadReq(authKey1));
+            // then
+            LocalDateTime seoulNow = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Seoul")).toLocalDateTime();
+            LocalDateTime returned = LocalDateTime.parse(res.getOccurredAt());
+            assertThat(java.time.Duration.between(returned, seoulNow).abs()).isLessThan(java.time.Duration.ofSeconds(10));
+            LocalDateTime stored = eventRepository.findById(res.getId()).orElseThrow().getOccurredAt();
+            assertThat(java.time.Duration.between(stored, seoulNow).abs()).isLessThan(java.time.Duration.ofSeconds(10));
+        } finally {
+            java.util.TimeZone.setDefault(original);
+        }
+    }
+
     // ===== 키패드 자동 판별 =====
 
     @Test

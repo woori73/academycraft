@@ -1,5 +1,6 @@
 package com.rea.academy.domain.clazz;
 
+import com.rea.academy.common.ReaTime;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -73,13 +74,13 @@ public class ReaClass {
 
     @PrePersist
     protected void onCreate() {
-        this.createdAt = LocalDateTime.now();
-        this.updatedAt = LocalDateTime.now();
+        this.createdAt = ReaTime.now();
+        this.updatedAt = ReaTime.now();
     }
 
     @PreUpdate
     protected void onUpdate() {
-        this.updatedAt = LocalDateTime.now();
+        this.updatedAt = ReaTime.now();
     }
 
     /** 반 정보 수정 */

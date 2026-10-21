@@ -1,5 +1,6 @@
 package com.rea.academy.domain.learning;
 
+import com.rea.academy.common.ReaTime;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -68,9 +69,9 @@ public class ReaGrade {
 
     @PrePersist
     protected void onCreate() {
-        this.createdAt = LocalDateTime.now();
+        this.createdAt = ReaTime.now();
         if (this.examDate == null) {
-            this.examDate = LocalDate.now();
+            this.examDate = ReaTime.today();
         }
     }
 

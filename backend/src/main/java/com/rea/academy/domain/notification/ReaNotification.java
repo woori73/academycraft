@@ -1,5 +1,6 @@
 package com.rea.academy.domain.notification;
 
+import com.rea.academy.common.ReaTime;
 import jakarta.persistence.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -85,12 +86,12 @@ public class ReaNotification {
 
     @PrePersist
     protected void onCreate() {
-        this.createdAt = LocalDateTime.now();
+        this.createdAt = ReaTime.now();
     }
 
     /** 읽음 처리 */
     public void markRead() {
-        this.readAt = LocalDateTime.now();
+        this.readAt = ReaTime.now();
     }
 
     public boolean isRead() {

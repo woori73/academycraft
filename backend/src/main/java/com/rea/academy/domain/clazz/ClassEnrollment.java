@@ -1,5 +1,6 @@
 package com.rea.academy.domain.clazz;
 
+import com.rea.academy.common.ReaTime;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -52,7 +53,7 @@ public class ClassEnrollment {
 
     @PrePersist
     protected void onCreate() {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = ReaTime.now();
         if (this.enrolledAt == null) this.enrolledAt = now;
         this.createdAt = now;
         this.updatedAt = now;
@@ -60,7 +61,7 @@ public class ClassEnrollment {
 
     @PreUpdate
     protected void onUpdate() {
-        this.updatedAt = LocalDateTime.now();
+        this.updatedAt = ReaTime.now();
     }
 
     /** 반에서 제외 (비활성) */

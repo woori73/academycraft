@@ -1,5 +1,6 @@
 package com.rea.academy.domain.learning;
 
+import com.rea.academy.common.ReaTime;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -58,9 +59,9 @@ public class ReaProgress {
 
     @PrePersist
     protected void onCreate() {
-        this.createdAt = LocalDateTime.now();
+        this.createdAt = ReaTime.now();
         if (this.recordedDate == null) {
-            this.recordedDate = LocalDate.now();
+            this.recordedDate = ReaTime.today();
         }
     }
 }

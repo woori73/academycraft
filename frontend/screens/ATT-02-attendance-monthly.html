@@ -71,7 +71,9 @@ var REA_API_BASE = '/api/rea'; // 학원 경로는 로그인 JWT에서 결정
 
 const DAY_LABEL = { IN: '출', OUT: '출', LATE: '지', ABSENT: '결', EARLY_LEAVE: '조', NONE: '-' };
 
-document.getElementById('month-in').value = new Date().toISOString().slice(0, 7);
+// 브라우저 로컬(한국) 날짜. toISOString()은 UTC라 KST 00~09시에 전날이 기본값이 되는 문제를 막는다.
+function localDateStr(from, to){ return new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(from, to); }
+document.getElementById('month-in').value = localDateStr(0, 7);
 loadClasses();
 
 async function loadClasses() {

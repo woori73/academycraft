@@ -1,5 +1,6 @@
 package com.rea.academy.domain.attendance;
 
+import com.rea.academy.common.ReaTime;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -61,14 +62,14 @@ public class ReaAttendanceSetting {
 
     @PrePersist
     protected void onCreate() {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = ReaTime.now();
         this.createdAt = now;
         this.updatedAt = now;
     }
 
     @PreUpdate
     protected void onUpdate() {
-        this.updatedAt = LocalDateTime.now();
+        this.updatedAt = ReaTime.now();
     }
 
     /** 출결 설정 변경. null이면 기존값 유지 (photoEnabled는 null이면 유지). */
