@@ -1,5 +1,6 @@
 package com.rea.academy.domain.notification;
 
+import com.rea.academy.common.ReaTime;
 import jakarta.persistence.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -50,7 +51,7 @@ public class ReaNotificationSetting {
     @PrePersist
     @PreUpdate
     protected void onSave() {
-        this.updatedAt = LocalDateTime.now();
+        this.updatedAt = ReaTime.now();
     }
 
     public void updateEnabled(boolean enabled) {

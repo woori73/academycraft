@@ -1,5 +1,6 @@
 package com.rea.academy.domain.member;
 
+import com.rea.academy.common.ReaTime;
 import jakarta.persistence.*;
 import lombok.*;
 import java.time.LocalDateTime;
@@ -64,13 +65,13 @@ public class ReaStudent {
 
     @PrePersist
     protected void onCreate() {
-        this.createdAt = LocalDateTime.now();
-        this.updatedAt = LocalDateTime.now();
+        this.createdAt = ReaTime.now();
+        this.updatedAt = ReaTime.now();
     }
 
     @PreUpdate
     protected void onUpdate() {
-        this.updatedAt = LocalDateTime.now();
+        this.updatedAt = ReaTime.now();
     }
 
     public void deactivate() {

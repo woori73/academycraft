@@ -1,5 +1,6 @@
 package com.rea.academy.service;
 
+import com.rea.academy.common.ReaTime;
 import com.rea.academy.domain.attendance.*;
 import com.rea.academy.domain.clazz.ClassEnrollmentRepository;
 import com.rea.academy.domain.clazz.ReaClass;
@@ -79,7 +80,7 @@ public class AttendanceService {
         AttendanceEventType type = AttendanceEventType.parse(req.getEventType());
         LocalDateTime occurredAt = parseDateTimeOrNull(req.getOccurredAt());
         if (occurredAt == null) {
-            occurredAt = LocalDateTime.now();
+            occurredAt = ReaTime.now();
         }
         validateCheckOutTime(academyId, type, occurredAt);
 
@@ -121,7 +122,7 @@ public class AttendanceService {
             throw new ReaForbiddenException("본인의 출석키로만 기록할 수 있습니다.");
         }
 
-        LocalDate today = LocalDate.now();
+        LocalDate today = ReaTime.today();
         List<ReaAttendanceEvent> todayEvents = eventsOfDay(academyId, student.getId(), today);
 
         boolean hasIn = todayEvents.stream().anyMatch(e -> IN_TYPES.contains(e.getEventType()));
@@ -136,7 +137,7 @@ public class AttendanceService {
             throw new IllegalStateException("오늘 등·하원 기록이 이미 완료되었습니다.");
         }
 
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = ReaTime.now();
         validateCheckOutTime(academyId, type, now);
 
         ReaAttendanceEvent event = ReaAttendanceEvent.builder()
@@ -191,7 +192,7 @@ public class AttendanceService {
             Long academyId, Long studentId, String fromStr, String toStr) {
         ReaStudent student = requireStudent(academyId, studentId, null);
 
-        LocalDate to = toStr == null ? LocalDate.now() : parseDate(toStr);
+        LocalDate to = toStr == null ? ReaTime.today() : parseDate(toStr);
         LocalDate from = fromStr == null ? to.minusDays(29) : parseDate(fromStr);
         if (from.isAfter(to)) {
             throw new IllegalArgumentException("조회 시작일이 종료일보다 늦습니다.");

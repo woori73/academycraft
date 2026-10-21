@@ -1,5 +1,6 @@
 package com.rea.academy.agent.plan;
 
+import com.rea.academy.common.ReaTime;
 import com.rea.academy.agent.AgentContext;
 import com.rea.academy.agent.AgentDispatcher;
 import com.rea.academy.agent.AgentTool;
@@ -170,7 +171,7 @@ public class AgentPlanService {
             throw new IllegalArgumentException("미리보기가 너무 큽니다. 요청을 나누어 주세요.");
         }
 
-        LocalDateTime now = LocalDateTime.now().truncatedTo(ChronoUnit.MILLIS);
+        LocalDateTime now = ReaTime.now().truncatedTo(ChronoUnit.MILLIS);
         if (plans.countByAcademyIdAndPrincipalIdAndStatusAndExpiresAtAfter(
                 ctx.academyId(), ctx.principalId(), AgentPlanStatus.PENDING, now) >= props.maxPendingPerPrincipal()) {
             throw reject(ctx, tool.getName(), HttpStatus.TOO_MANY_REQUESTS, "TOO_MANY_PENDING",
@@ -281,7 +282,7 @@ public class AgentPlanService {
             String reason = truncate(e.getMessage(), 200);
             Outcome failed = tx.execute(st -> {
                 ReaAgentPlan plan = plans.findForUpdate(planId).orElseThrow();
-                plan.markFailed("TOOL_ERROR", LocalDateTime.now().truncatedTo(ChronoUnit.MILLIS));
+                plan.markFailed("TOOL_ERROR", ReaTime.now().truncatedTo(ChronoUnit.MILLIS));
                 plans.save(plan);
                 audit(AuditActionType.AGENT_PLAN_FAILED, ctx, plan, "failure=TOOL_ERROR");
                 AgentDto.PlanView v = view(plan, null,
@@ -301,7 +302,7 @@ public class AgentPlanService {
             if (json.length() > MAX_RESULT_JSON) {
                 json = AgentPlanHasher.canonicalJson(Map.of("truncated", true));
             }
-            plan.markExecuted(json, LocalDateTime.now().truncatedTo(ChronoUnit.MILLIS));
+            plan.markExecuted(json, ReaTime.now().truncatedTo(ChronoUnit.MILLIS));
             plans.save(plan);
             audit(AuditActionType.AGENT_PLAN_EXECUTED, ctx, plan, "ok");
             return Outcome.view(view(plan, result, "실행했습니다."));
@@ -400,7 +401,7 @@ public class AgentPlanService {
 
         // 1회 실행 선점(CAS): PENDING → EXECUTING 은 한 요청만 성공한다
         int claimed = plans.claimForExecution(plan.getPlanId(), ctx.principalId(),
-                LocalDateTime.now().truncatedTo(ChronoUnit.MILLIS));
+                ReaTime.now().truncatedTo(ChronoUnit.MILLIS));
         if (claimed != 1) {
             return Gate.error(new AgentPlanException(HttpStatus.CONFLICT, "PLAN_CONFLICT",
                     "다른 요청이 먼저 처리했거나 만료된 계획입니다."));
@@ -448,7 +449,7 @@ public class AgentPlanService {
 
     /** 만료·장기 실행 중 상태를 조회 시점에 정리한다 (잠금을 쥔 트랜잭션 안에서 호출). */
     private void applyLazyTransitions(AgentContext ctx, ReaAgentPlan plan) {
-        LocalDateTime now = LocalDateTime.now().truncatedTo(ChronoUnit.MILLIS);
+        LocalDateTime now = ReaTime.now().truncatedTo(ChronoUnit.MILLIS);
         if (plan.getStatus() == AgentPlanStatus.PENDING && !now.isBefore(plan.getExpiresAt())) {
             plan.markTerminal(AgentPlanStatus.EXPIRED, null);
             plans.save(plan);

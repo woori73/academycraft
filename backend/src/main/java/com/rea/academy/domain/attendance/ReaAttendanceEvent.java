@@ -1,5 +1,6 @@
 package com.rea.academy.domain.attendance;
 
+import com.rea.academy.common.ReaTime;
 import jakarta.persistence.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -73,7 +74,7 @@ public class ReaAttendanceEvent {
 
     @PrePersist
     protected void onCreate() {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = ReaTime.now();
         this.createdAt = now;
         this.updatedAt = now;
         if (this.occurredAt == null) {
@@ -83,7 +84,7 @@ public class ReaAttendanceEvent {
 
     @PreUpdate
     protected void onUpdate() {
-        this.updatedAt = LocalDateTime.now();
+        this.updatedAt = ReaTime.now();
     }
 
     /** 출결 정정 적용 (정정 이력 행은 별도 테이블에 기록) */

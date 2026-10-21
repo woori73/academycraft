@@ -1,5 +1,6 @@
 package com.rea.academy.domain.notice;
 
+import com.rea.academy.common.ReaTime;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -46,7 +47,7 @@ public class ReaNoticeRead {
     @PrePersist
     protected void onCreate() {
         if (this.readAt == null) {
-            this.readAt = LocalDateTime.now();
+            this.readAt = ReaTime.now();
         }
     }
 }

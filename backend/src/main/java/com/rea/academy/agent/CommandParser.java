@@ -1,5 +1,6 @@
 package com.rea.academy.agent;
 
+import com.rea.academy.common.ReaTime;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -149,8 +150,8 @@ public class CommandParser {
             Matcher rm = recentDays.matcher(cmd);
             if (rm.find()) {
                 int n = Integer.parseInt(rm.group(1));
-                params.put("startDate", java.time.LocalDate.now().minusDays(n - 1).toString());
-                params.put("endDate", java.time.LocalDate.now().toString());
+                params.put("startDate", ReaTime.today().minusDays(n - 1).toString());
+                params.put("endDate", ReaTime.today().toString());
             }
             return ParseResult.success("generateOperationReport", params);
         }

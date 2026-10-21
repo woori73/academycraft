@@ -1,5 +1,6 @@
 package com.rea.academy.agent;
 
+import com.rea.academy.common.ReaTime;
 import com.rea.academy.domain.admin.AuditActionType;
 import com.rea.academy.domain.admin.ReaAuditLogRepository;
 import com.rea.academy.domain.member.ReaRole;
@@ -107,22 +108,22 @@ class AgentTask3VerificationTest {
         // 오늘 결석: 김철수
         attendanceService.check(ACADEMY, AttendanceDto.CheckRequest.builder()
                 .studentId(kimId).eventType("ABSENT")
-                .occurredAt(LocalDate.now() + "T09:00").note("감기").build());
+                .occurredAt(ReaTime.today() + "T09:00").note("감기").build());
 
         // 숙제: 영어반 "영어 단어 암기" — 이영희만 완료, 김철수는 미제출
         Long homeworkId = learningService.createHomework(ACADEMY,
                 LearningDto.HomeworkCreateRequest.builder()
                         .classId(englishClassId).title("영어 단어 암기").content("Day 1~10 암기")
-                        .dueDate(LocalDate.now().plusDays(1).toString()).build())
+                        .dueDate(ReaTime.today().plusDays(1).toString()).build())
                 .getHomework().getId();
         learningService.checkHomework(ACADEMY, homeworkId,
                 LearningDto.HomeworkCheckRequest.builder()
                         .studentId(leeId).status("COMPLETED").build());
 
         // 성적: 김철수 영어 70% → 85% (상승), 수학 80% 단일 (유지)
-        createGrade(kimId, "10월 모의고사", "영어", 70, 100, LocalDate.now().minusDays(30));
-        createGrade(kimId, "11월 모의고사", "영어", 85, 100, LocalDate.now());
-        createGrade(kimId, "10월 모의고사", "수학", 80, 100, LocalDate.now().minusDays(20));
+        createGrade(kimId, "10월 모의고사", "영어", 70, 100, ReaTime.today().minusDays(30));
+        createGrade(kimId, "11월 모의고사", "영어", 85, 100, ReaTime.today());
+        createGrade(kimId, "10월 모의고사", "수학", 80, 100, ReaTime.today().minusDays(20));
     }
 
     private Long createStudent(String name, String grade) {
@@ -280,7 +281,7 @@ class AgentTask3VerificationTest {
 
         assertThat(resp.isSuccess()).isTrue();
         assertThat(resp.getToolUsed()).isEqualTo("getAbsentStudents");
-        assertThat(resp.getResult().get("date")).isEqualTo(LocalDate.now().toString());
+        assertThat(resp.getResult().get("date")).isEqualTo(ReaTime.today().toString());
         assertThat((int) resp.getResult().get("count")).isEqualTo(1);
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> absentees =

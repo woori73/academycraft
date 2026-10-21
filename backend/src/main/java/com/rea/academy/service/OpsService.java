@@ -1,5 +1,6 @@
 package com.rea.academy.service;
 
+import com.rea.academy.common.ReaTime;
 import com.rea.academy.domain.attendance.AttendanceEventType;
 import com.rea.academy.domain.attendance.ReaAttendanceEvent;
 import com.rea.academy.domain.clazz.ClassEnrollmentRepository;
@@ -407,7 +408,7 @@ public class OpsService {
         long classCount = classRepository
                 .findByAcademyIdAndActiveTrueOrderByIdAsc(academyId).size();
 
-        LocalDate today = LocalDate.now();
+        LocalDate today = ReaTime.today();
         LocalDateTime from = today.atStartOfDay();
         LocalDateTime to = today.plusDays(1).atStartOfDay();
         List<ReaAttendanceEvent> todayEvents = attendanceEventRepository
@@ -429,7 +430,7 @@ public class OpsService {
                 .filter(c -> c.getStatus() == ConsultationStatus.OPEN)
                 .count();
 
-        YearMonth ym = YearMonth.now();
+        YearMonth ym = YearMonth.from(ReaTime.today());
         long monthlyNotices = noticeRepository
                 .findByAcademyIdAndActiveTrueOrderByIdDesc(academyId).stream()
                 .filter(n -> n.getCreatedAt() != null
@@ -444,7 +445,7 @@ public class OpsService {
                 .unansweredConsultationCount(unanswered)
                 .monthlyNoticeCount(monthlyNotices)
                 .month(ym.format(YEAR_MONTH_FORMAT))
-                .generatedAt(LocalDateTime.now())
+                .generatedAt(ReaTime.now())
                 .build();
     }
 

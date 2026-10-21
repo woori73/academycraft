@@ -1,5 +1,6 @@
 package com.rea.academy.agent.tools;
 
+import com.rea.academy.common.ReaTime;
 import com.rea.academy.agent.AgentContext;
 import com.rea.academy.agent.AgentTool;
 import com.rea.academy.agent.AgentUtils;
@@ -58,7 +59,7 @@ public class AnalyzeGradeChangesTool implements AgentTool {
     @Override
     public Map<String, Object> execute(Map<String, Object> input, AgentContext ctx) {
         Long studentId = AgentUtils.requiredLong(input, "studentId", "학생 ID");
-        LocalDate end = AgentUtils.parseDate(input.get("endDate"), LocalDate.now());
+        LocalDate end = AgentUtils.parseDate(input.get("endDate"), ReaTime.today());
         LocalDate start = AgentUtils.parseDate(input.get("startDate"), end.minusDays(89));
         if (start.isAfter(end)) {
             throw new IllegalArgumentException("조회 시작일이 종료일보다 늦습니다.");

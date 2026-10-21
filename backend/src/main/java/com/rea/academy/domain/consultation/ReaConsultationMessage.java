@@ -1,5 +1,6 @@
 package com.rea.academy.domain.consultation;
 
+import com.rea.academy.common.ReaTime;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -62,12 +63,12 @@ public class ReaConsultationMessage {
 
     @PrePersist
     protected void onCreate() {
-        this.createdAt = LocalDateTime.now();
+        this.createdAt = ReaTime.now();
     }
 
     /** 읽음 처리 */
     public void markRead() {
-        this.readAt = LocalDateTime.now();
+        this.readAt = ReaTime.now();
     }
 
     public boolean isRead() {

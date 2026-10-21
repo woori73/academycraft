@@ -1,5 +1,6 @@
 package com.rea.academy.domain.learning;
 
+import com.rea.academy.common.ReaTime;
 import jakarta.persistence.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -68,7 +69,7 @@ public class ReaHomeworkCheck {
 
     @PrePersist
     protected void onCreate() {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = ReaTime.now();
         this.createdAt = now;
         this.updatedAt = now;
         if (this.checkedAt == null) {
@@ -78,7 +79,7 @@ public class ReaHomeworkCheck {
 
     @PreUpdate
     protected void onUpdate() {
-        this.updatedAt = LocalDateTime.now();
+        this.updatedAt = ReaTime.now();
     }
 
     /** 재검사: 결과·점수·코멘트 갱신 */
@@ -86,6 +87,6 @@ public class ReaHomeworkCheck {
         this.status = status;
         this.score = score;
         this.comment = comment;
-        this.checkedAt = LocalDateTime.now();
+        this.checkedAt = ReaTime.now();
     }
 }

@@ -1,5 +1,6 @@
 package com.rea.academy.domain.member;
 
+import com.rea.academy.common.ReaTime;
 import jakarta.persistence.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -104,13 +105,13 @@ public class ReaMember {
 
     @PrePersist
     protected void onCreate() {
-        this.createdAt = LocalDateTime.now();
-        this.updatedAt = LocalDateTime.now();
+        this.createdAt = ReaTime.now();
+        this.updatedAt = ReaTime.now();
     }
 
     @PreUpdate
     protected void onUpdate() {
-        this.updatedAt = LocalDateTime.now();
+        this.updatedAt = ReaTime.now();
     }
 
     /** 비활성화 (삭제) */
@@ -138,14 +139,14 @@ public class ReaMember {
 
     /** 계정 잠금 여부 */
     public boolean isLocked() {
-        return lockedUntil != null && lockedUntil.isAfter(LocalDateTime.now());
+        return lockedUntil != null && lockedUntil.isAfter(ReaTime.now());
     }
 
     /** 로그인 실패 기록 (5회 연속 시 15분 잠금 — 호출자가 임계값 관리) */
     public void recordLoginFailure(int maxAttempts, int lockMinutes) {
         this.failedLoginAttempts = (this.failedLoginAttempts == null ? 0 : this.failedLoginAttempts) + 1;
         if (this.failedLoginAttempts >= maxAttempts) {
-            this.lockedUntil = LocalDateTime.now().plusMinutes(lockMinutes);
+            this.lockedUntil = ReaTime.now().plusMinutes(lockMinutes);
         }
     }
 
@@ -158,7 +159,7 @@ public class ReaMember {
     /** 비밀번호 재설정 토큰 발급 */
     public void issuePasswordResetToken(String token, int expiryMinutes) {
         this.passwordResetToken = token;
-        this.passwordResetExpiresAt = LocalDateTime.now().plusMinutes(expiryMinutes);
+        this.passwordResetExpiresAt = ReaTime.now().plusMinutes(expiryMinutes);
     }
 
     /** 재설정 토큰 유효성 */
@@ -166,7 +167,7 @@ public class ReaMember {
         return token != null
                 && token.equals(this.passwordResetToken)
                 && this.passwordResetExpiresAt != null
-                && this.passwordResetExpiresAt.isAfter(LocalDateTime.now());
+                && this.passwordResetExpiresAt.isAfter(ReaTime.now());
     }
 
     /** 비밀번호 변경 (재설정 토큰·실패 카운터·리프레시 토큰 초기화) */

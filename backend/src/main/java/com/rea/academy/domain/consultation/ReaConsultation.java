@@ -1,5 +1,6 @@
 package com.rea.academy.domain.consultation;
 
+import com.rea.academy.common.ReaTime;
 import jakarta.persistence.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -68,13 +69,13 @@ public class ReaConsultation {
 
     @PrePersist
     protected void onCreate() {
-        this.createdAt = LocalDateTime.now();
+        this.createdAt = ReaTime.now();
         this.updatedAt = this.createdAt;
     }
 
     @PreUpdate
     protected void onUpdate() {
-        this.updatedAt = LocalDateTime.now();
+        this.updatedAt = ReaTime.now();
     }
 
     /** 학원(원장·강사) 답변 등록 → 답변완료 */

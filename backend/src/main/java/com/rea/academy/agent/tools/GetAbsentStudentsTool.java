@@ -1,5 +1,6 @@
 package com.rea.academy.agent.tools;
 
+import com.rea.academy.common.ReaTime;
 import com.rea.academy.agent.AgentContext;
 import com.rea.academy.agent.AgentTool;
 import com.rea.academy.agent.AgentUtils;
@@ -52,7 +53,7 @@ public class GetAbsentStudentsTool implements AgentTool {
 
     @Override
     public Map<String, Object> execute(Map<String, Object> input, AgentContext ctx) {
-        LocalDate date = AgentUtils.parseDate(input.get("date"), LocalDate.now());
+        LocalDate date = AgentUtils.parseDate(input.get("date"), ReaTime.today());
         String dateStr = date.toString();
 
         List<ClassDto.Response> classes = classService.getClasses(ctx.academyId(), false);

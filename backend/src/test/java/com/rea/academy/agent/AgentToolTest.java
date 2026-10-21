@@ -1,5 +1,6 @@
 package com.rea.academy.agent;
 
+import com.rea.academy.common.ReaTime;
 import com.rea.academy.agent.tools.AnalyzeGradeChangesTool;
 import com.rea.academy.agent.tools.AssignStudentToClassTool;
 import com.rea.academy.agent.tools.CreateNoticeDraftTool;
@@ -141,11 +142,11 @@ class AgentToolTest {
         classService.assignStudents(ACADEMY, classId, List.of(studentId));
         attendanceService.check(ACADEMY, AttendanceDto.CheckRequest.builder()
                 .studentId(studentId).eventType("ABSENT")
-                .occurredAt(LocalDate.now() + "T09:00").build());
+                .occurredAt(ReaTime.today() + "T09:00").build());
 
         Map<String, Object> result = getAbsentStudentsTool.execute(Map.of("date", "오늘"), ctx);
 
-        assertThat(result.get("date")).isEqualTo(LocalDate.now().toString());
+        assertThat(result.get("date")).isEqualTo(ReaTime.today().toString());
         assertThat((int) result.get("count")).isEqualTo(1);
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> absentees = (List<Map<String, Object>>) result.get("absentees");
@@ -172,7 +173,7 @@ class AgentToolTest {
         Long homeworkId = learningService.createHomework(ACADEMY,
                 LearningDto.HomeworkCreateRequest.builder()
                         .classId(classId).title("수학 숙제").content("수학 문제집 풀이")
-                        .dueDate(LocalDate.now().plusDays(1).toString()).build())
+                        .dueDate(ReaTime.today().plusDays(1).toString()).build())
                 .getHomework().getId();
         learningService.checkHomework(ACADEMY, homeworkId,
                 LearningDto.HomeworkCheckRequest.builder()
@@ -194,11 +195,11 @@ class AgentToolTest {
         learningService.createHomework(ACADEMY,
                 LearningDto.HomeworkCreateRequest.builder()
                         .classId(classId).title("숙제1").content("내용1")
-                        .dueDate(LocalDate.now().plusDays(1).toString()).build());
+                        .dueDate(ReaTime.today().plusDays(1).toString()).build());
         learningService.createHomework(ACADEMY,
                 LearningDto.HomeworkCreateRequest.builder()
                         .classId(classId).title("숙제2").content("내용2")
-                        .dueDate(LocalDate.now().plusDays(2).toString()).build());
+                        .dueDate(ReaTime.today().plusDays(2).toString()).build());
 
         Map<String, Object> result = getHomeworkIncompleteTool.execute(
                 Map.of("classId", classId), ctx);
@@ -234,7 +235,7 @@ class AgentToolTest {
     @Test
     @DisplayName("analyzeGradeChanges: 과목별 평균·추이 분석")
     void analyzeGradeChanges_analyzes() {
-        String today = LocalDate.now().toString();
+        String today = ReaTime.today().toString();
         learningService.createGrade(ACADEMY, LearningDto.GradeCreateRequest.builder()
                 .studentId(studentId).examName("3월 모의고사").subject("수학")
                 .score(70).fullScore(100).examDate(today).build());
@@ -244,7 +245,7 @@ class AgentToolTest {
 
         Map<String, Object> result = analyzeGradeChangesTool.execute(
                 Map.of("studentId", studentId,
-                        "startDate", LocalDate.now().minusDays(10).toString(),
+                        "startDate", ReaTime.today().minusDays(10).toString(),
                         "endDate", today), ctx);
 
         assertThat(result.get("studentName")).isEqualTo("홍학생");
@@ -276,11 +277,11 @@ class AgentToolTest {
         classService.assignStudents(ACADEMY, classId, List.of(studentId));
         attendanceService.check(ACADEMY, AttendanceDto.CheckRequest.builder()
                 .studentId(studentId).eventType("CHECK_IN")
-                .occurredAt(LocalDate.now() + "T09:00").build());
+                .occurredAt(ReaTime.today() + "T09:00").build());
 
         Map<String, Object> result = generateOperationReportTool.execute(
-                Map.of("startDate", LocalDate.now().toString(),
-                        "endDate", LocalDate.now().toString()), ctx);
+                Map.of("startDate", ReaTime.today().toString(),
+                        "endDate", ReaTime.today().toString()), ctx);
 
         assertThat(result.get("classCount")).isEqualTo(1);
         assertThat((Double) result.get("attendanceRate")).isEqualTo(100.0);
