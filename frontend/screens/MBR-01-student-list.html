@@ -18,8 +18,22 @@
   .student-name { font-weight: bold; font-size: 16px; }
   .btn { padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; background: #fff; cursor: pointer; }
   .btn-primary { background: #0066cc; color: #fff; border-color: #0066cc; }
-  #add-form { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 16px; display: none; }
-  #add-form input { width: 100%; padding: 10px; margin-bottom: 8px; border: 1px solid #ddd; border-radius: 8px; }
+  [hidden] { display: none !important; }
+  #student-form { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+  #student-form label { display: block; font-size: 13px; color: #444; margin-bottom: 2px; }
+  #student-form input { width: 100%; padding: 10px; margin-bottom: 8px; border: 1px solid #ccc; border-radius: 8px; font-size: 15px; }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0 12px; }
+  .count { font-size: 15px; margin-bottom: 8px; color: #333; }
+  .msg { min-height: 20px; margin-bottom: 8px; font-size: 14px; } .msg.err { color: #c5221f; } .msg.ok { color: #1a7f37; }
+  .student-name { overflow-wrap: anywhere; }
+  .student-card.sel { outline: 2px solid #176253; }
+  .sub { color: #666; font-size: 13px; }
+  #detail { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+  #detail h2 { font-size: 18px; margin-bottom: 8px; overflow-wrap: anywhere; }
+  #detail h3 { font-size: 15px; margin: 14px 0 6px; }
+  #detail ul { list-style: none; } #detail li { padding: 6px 0; border-bottom: 1px solid #eee; font-size: 14px; }
+  #detail a, .linkbtn { color: #176253; display: inline-flex; align-items: center; min-height: 40px; }
+  .btn-primary { background: #176253 !important; border-color: #176253 !important; }
 
   /* [Phase5-Task4] 모바일 터치 영역 보강 (480px 이하) */
   @media (max-width: 480px) {
@@ -41,93 +55,189 @@
   <p style="color:#666;font-size:13px;margin-top:4px;">REA 1차 구현 - MBR-01</p>
 </div>
 
-<div class="search">
-  <input type="text" id="search" placeholder="학생 이름 검색">
-  <button onclick="loadStudents()">검색</button>
-  <button class="btn-primary btn" onclick="toggleForm()">+ 학생 등록</button>
+<div class="search" role="search">
+  <label for="search" style="position:absolute;left:-9999px">학생 검색</label>
+  <input type="text" id="search" placeholder="이름·학교·학년 검색">
+  <label for="class-filter" style="position:absolute;left:-9999px">반</label>
+  <select id="class-filter" style="padding:10px;border:1px solid #ddd;border-radius:8px;"><option value="">전체 반</option></select>
+  <label for="status-filter" style="position:absolute;left:-9999px">재원 상태</label>
+  <select id="status-filter" style="padding:10px;border:1px solid #ddd;border-radius:8px;"><option value="active">재원(활성)</option><option value="inactive">비활성(퇴원 처리)</option></select>
+  <button type="button" class="btn-primary btn" id="btn-new">+ 학생 등록</button>
 </div>
 
-<div id="add-form">
-  <input type="text" id="f-name" placeholder="학생 이름 (필수)">
-  <input type="text" id="f-grade" placeholder="학년 (예: 고2)">
-  <input type="text" id="f-parent" placeholder="학부모 이름">
-  <input type="text" id="f-phone" placeholder="학부모 연락처">
-  <button class="btn-primary btn" onclick="createStudent()">등록</button>
-  <button class="btn" onclick="toggleForm()">취소</button>
-</div>
+<div class="count" id="count" aria-live="polite">학생 명단을 불러오는 중입니다…</div>
+<div class="msg" id="msg" role="status"></div>
 
+<form id="student-form" hidden aria-labelledby="form-title">
+  <h2 id="form-title" style="font-size:17px;margin-bottom:10px;">학생 등록</h2>
+  <div class="grid2">
+    <div><label for="f-name">학생 이름 (필수)</label><input type="text" id="f-name" name="name" required maxlength="50" autocomplete="off"></div>
+    <div><label for="f-grade">학년</label><input type="text" id="f-grade" name="grade" placeholder="예: 고2" maxlength="20"></div>
+    <div><label for="f-school">학교</label><input type="text" id="f-school" name="schoolName" maxlength="100"></div>
+    <div><label for="f-parent">학부모 이름</label><input type="text" id="f-parent" name="parentName" maxlength="50"></div>
+    <div><label for="f-phone">학부모 연락처</label><input type="tel" id="f-phone" name="parentPhone" maxlength="20" autocomplete="off"></div>
+  </div>
+  <button type="submit" class="btn-primary btn" id="f-save">저장</button>
+  <button type="button" class="btn" id="f-cancel">취소</button>
+</form>
+
+<section id="detail" hidden aria-live="polite"></section>
 <div id="list"></div>
 
 <script src="../components/auth.js"></script>
 <script src="../components/api-client.js"></script>
+<script src="../components/screen-rules.js"></script>
 <script>
 var REA_API_BASE = '/api/rea'; // 학원 경로는 로그인 JWT에서 결정
-// 학원 경로는 JWT의 academyId로 공통 클라이언트에서 결정한다.
+const R = window.ScreenRules;
+const TODAY = R.kstToday();
+const state = { students: [], classes: [], classMap: {}, editing: null, selected: null };
+const $ = id => document.getElementById(id);
+function el(tag, text, cls) { const e = document.createElement(tag); if (text != null) e.textContent = text; if (cls) e.className = cls; return e; }
+function link(text, href) { const a = el('a', text); a.href = href; return a; }
+function showMsg(text, ok) { $('msg').className = 'msg ' + (ok ? 'ok' : 'err'); $('msg').textContent = text || ''; }
+const EVENT_LABEL = R.EVENT_LABEL;
 
-function escapeHtml(value) {
-  return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function syncUrl() {
+  const q = new URLSearchParams();
+  if ($('class-filter').value) q.set('classId', $('class-filter').value);
+  if (state.selected) q.set('studentId', state.selected);
+  history.replaceState(null, '', location.pathname + (q.toString() ? '?' + q : ''));
 }
-function toggleForm() {
-  const f = document.getElementById('add-form');
-  f.style.display = f.style.display === 'none' ? 'block' : 'none';
+
+async function loadClasses() {
+  const res = await apiGet(`/@academy/classes`);
+  if (!res.ok) return;
+  state.classes = await res.json();
+  state.classes.forEach(c => { const o = el('option', c.name); o.value = c.id; $('class-filter').append(o); });
+  // 반 상세(활성 학생만)로 학생별 소속 반을 모은다. 여러 반 수강생도 명단에서는 한 사람이다.
+  const details = await Promise.all(state.classes.map(c => apiGet(`/@academy/classes/${c.id}`).then(r => r.ok ? r.json() : null).catch(() => null)));
+  state.classMap = R.classesByStudent(details.filter(Boolean));
 }
 
 async function loadStudents() {
-  const kw = document.getElementById('search').value;
-  const url = `/@academy/students${kw ? '?name=' + encodeURIComponent(kw) : ''}`;
-  const res = await apiGet(url);
-  const students = await res.json();
-  const list = document.getElementById('list');
-  list.innerHTML = students.map(s => `
-    <div class="student-card">
-      <div class="student-info">
-        <div class="student-name">${escapeHtml(s.name)}</div>
-        <div>${escapeHtml(s.grade || '')} ${s.parentName ? '· ' + escapeHtml(s.parentName) : ''}</div>
-      </div>
-      <button class="btn" onclick="showDetail(${s.id})">상세·수정</button>
-    </div>
-  `).join('') || '<p style="color:#999;">등록된 학생이 없습니다.</p>';
+  const inactive = $('status-filter').value === 'inactive';
+  const res = await apiGet(inactive ? `/@academy/students/inactive` : `/@academy/students`);
+  if (!res.ok) { $('count').textContent = '학생 명단을 불러오지 못했습니다.'; state.students = []; render(); return; }
+  state.students = await res.json();
+  render();
 }
 
-async function createStudent() {
-  const body = {
-    name: document.getElementById('f-name').value,
-    grade: document.getElementById('f-grade').value,
-    parentName: document.getElementById('f-parent').value,
-    parentPhone: document.getElementById('f-phone').value
-  };
-  if (!body.name) { alert('학생 이름을 입력하세요.'); return; }
-  const res = await apiPost(`/@academy/students`, body);
-  const saved = await res.json();
-  alert(`등록 완료. 인증키: ${saved.authKey}\n학부모에게 공유하세요.`);
-  toggleForm();
-  loadStudents();
+function render() {
+  const inactive = $('status-filter').value === 'inactive';
+  const classId = $('class-filter').value;
+  const ids = classId ? new Set(Object.entries(state.classMap).filter(([, cs]) => cs.some(c => String(c.id) === classId)).map(([id]) => Number(id))) : null;
+  const r = R.filterStudents(state.students, $('search').value, ids);
+  const scope = classId ? ` · ${($('class-filter').selectedOptions[0] || {}).textContent} ${r.shown.length}명` : '';
+  const kw = $('search').value.trim() ? ` · 검색 결과 ${r.shown.length}명` : '';
+  // 전체 인원은 검색·반 필터와 분리한다. 재원(활성) 전체 = 학원 홈 '재원생 n명'과 같은 기준.
+  $('count').textContent = (inactive ? '비활성 학생 ' : '재원생 전체 ') + r.total + '명' + scope + kw;
+  const list = $('list');
+  list.replaceChildren();
+  if (!r.shown.length) list.append(el('p', state.students.length ? '조건에 맞는 학생이 없습니다.' : '등록된 학생이 없습니다.', 'sub'));
+  r.shown.forEach(s => {
+    const card = el('div', null, 'student-card' + (String(s.id) === String(state.selected) ? ' sel' : ''));
+    const info = el('div', null, 'student-info');
+    info.append(el('div', s.name, 'student-name'));
+    const classes = (state.classMap[s.id] || []).map(c => c.name).join(', ');
+    info.append(el('div', [s.grade, s.schoolName, classes ? '반: ' + classes : '배정된 반 없음'].filter(Boolean).join(' · '), 'sub'));
+    const b = el('button', '상세', 'btn'); b.type = 'button'; b.onclick = () => showDetail(s.id);
+    b.setAttribute('aria-label', s.name + ' 상세');
+    card.append(info, b);
+    list.append(card);
+  });
 }
+
+function openForm(student) {
+  state.editing = student ? student.id : null;
+  $('form-title').textContent = student ? `학생 정보 수정 · ${student.name}` : '학생 등록';
+  $('f-name').value = student ? student.name || '' : '';
+  $('f-grade').value = student ? student.grade || '' : '';
+  $('f-school').value = student ? student.schoolName || '' : '';
+  $('f-parent').value = student ? student.parentName || '' : '';
+  $('f-phone').value = student ? student.parentPhone || '' : '';
+  $('student-form').hidden = false;
+  $('f-name').focus();
+}
+function closeForm() { $('student-form').hidden = true; state.editing = null; }
+
+$('student-form').addEventListener('submit', async ev => {
+  ev.preventDefault();
+  $('f-save').disabled = true;
+  try {
+    const body = R.studentBody(Object.fromEntries(new FormData($('student-form'))));
+    const res = state.editing ? await apiPut(`/@academy/students/${state.editing}`, body) : await apiPost(`/@academy/students`, body);
+    const saved = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(saved.message || (res.status === 403 ? '학생 정보 수정은 원장 권한입니다.' : '저장 실패 (' + res.status + ')'));
+    const wasEdit = !!state.editing;
+    closeForm();
+    showMsg(wasEdit ? `${saved.name} 학생 정보를 저장했습니다.` : `${saved.name} 학생을 등록했습니다. 학부모 인증키: ${saved.authKey} (학부모에게만 공유하세요)`, true);
+    await loadStudents();
+    showDetail(saved.id);
+  } catch (e) { showMsg(e.message, false); }
+  finally { $('f-save').disabled = false; }
+});
+$('f-cancel').onclick = closeForm;
+$('btn-new').onclick = () => openForm(null);
+$('search').addEventListener('input', render);
+$('class-filter').addEventListener('change', () => { syncUrl(); render(); });
+$('status-filter').addEventListener('change', () => { state.selected = null; $('detail').hidden = true; syncUrl(); loadStudents(); });
 
 async function showDetail(id) {
+  state.selected = id; syncUrl(); render();
+  const box = $('detail');
+  box.hidden = false;
+  box.replaceChildren(el('p', '학생 정보를 불러오는 중입니다…', 'sub'));
   const res = await apiGet(`/@academy/students/${id}`);
+  if (!res.ok) { box.replaceChildren(el('p', '학생 정보를 불러오지 못했습니다.', 'sub')); return; }
   const s = await res.json();
-  const name = prompt("이름", s.name);
-  if (name === null) return;
-  const grade = prompt("학년", s.grade || "");
-  if (grade === null) return;
-  const schoolName = prompt("학교", s.schoolName || "");
-  if (schoolName === null) return;
-  const parentName = prompt("학부모 이름", s.parentName || "");
-  if (parentName === null) return;
-  const parentPhone = prompt("학부모 연락처", s.parentPhone || "");
-  if (parentPhone === null) return;
+  const [att, cons] = await Promise.all([
+    apiGet(`/@academy/attendance/student/${id}`).then(r => r.ok ? r.json() : null).catch(() => null),
+    apiGet(`/@academy/consultations?targetStudentId=${id}`).then(r => r.ok ? r.json() : null).catch(() => null)
+  ]);
+  box.replaceChildren();
+  box.append(el('h2', s.name));
+  box.append(el('p', [s.grade, s.schoolName, s.parentName ? '학부모 ' + s.parentName : '', s.parentPhone].filter(Boolean).join(' · ') || '추가 정보 없음', 'sub'));
+  const edit = el('button', '정보 수정', 'btn'); edit.type = 'button'; edit.onclick = () => openForm(s);
+  box.append(edit);
 
-  const putRes = await apiPut(`/@academy/students/${id}`, { name, grade, schoolName, parentName, parentPhone });
-  if (putRes.ok) {
-    alert("수정 완료");
-    loadStudents();
-  } else {
-    alert("수정 실패: " + putRes.status);
-  }
+  box.append(el('h3', '소속 반'));
+  const classes = state.classMap[s.id] || [];
+  if (!classes.length) box.append(el('p', '배정된 반이 없습니다. 반 상세에서 배정하세요.', 'sub'));
+  const cl = el('ul');
+  classes.forEach(c => {
+    const li = el('li');
+    li.append(link(c.name, `CLS-03-class-detail.html?id=${encodeURIComponent(c.id)}`), document.createTextNode(' · '), link('오늘 출결부', `ATT-03-attendance-roster.html?classId=${encodeURIComponent(c.id)}&date=${TODAY}`));
+    cl.append(li);
+  });
+  box.append(cl);
+
+  box.append(el('h3', '최근 출결 (30일)'));
+  if (!att) box.append(el('p', '출결 기록을 불러오지 못했습니다.', 'sub'));
+  else if (!att.length) box.append(el('p', '최근 30일 출결 기록이 없습니다.', 'sub'));
+  else { const ul = el('ul'); att.slice(-10).reverse().forEach(e => ul.append(el('li', `${String(e.occurredAt || '').replace('T', ' ')} · ${EVENT_LABEL[e.eventType] || e.eventType}${e.className ? ' · ' + e.className : ''}${e.corrected ? ' (정정됨)' : ''}`))); box.append(ul); }
+
+  box.append(el('h3', '상담 기록'));
+  if (!cons) box.append(el('p', '상담 기록을 불러오지 못했습니다.', 'sub'));
+  else if (!cons.length) box.append(el('p', '상담 기록이 없습니다.', 'sub'));
+  else { const ul = el('ul'); cons.forEach(c => { const li = el('li'); li.append(link(c.title, `CNS-05-consultation-detail.html?id=${encodeURIComponent(c.id)}`), document.createTextNode(` · ${c.typeLabel} · ${c.statusLabel} · ${String(c.lastMessageAt || c.createdAt || '').replace('T', ' ').slice(0, 16)}`)); ul.append(li); }); box.append(ul); }
+  const actions = el('p');
+  actions.append(link('상담 기록 작성', `CNS-04-news-send.html?studentId=${encodeURIComponent(s.id)}`), document.createTextNode(' · '), link('이 학생 상담 모두 보기', `CNS-03-inquiry-inbox.html?targetStudentId=${encodeURIComponent(s.id)}`));
+  box.append(actions);
+
+  box.append(el('h3', '연결 자료'));
+  const info = el('p', null, 'sub');
+  info.append(document.createTextNode('학생 기록에 연결된 자료는 정보 화면에서 읽습니다. '), link('정보 열기', '/dashboard/info'));
+  box.append(info);
 }
 
-loadStudents();
+(async function init() {
+  const q = new URLSearchParams(location.search);
+  await loadClasses();
+  if (R.isId(q.get('classId'))) $('class-filter').value = q.get('classId');
+  await loadStudents();
+  if (R.isId(q.get('studentId'))) showDetail(Number(q.get('studentId')));
+})();
 </script>
 </body>
 </html>

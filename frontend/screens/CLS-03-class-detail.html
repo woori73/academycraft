@@ -55,6 +55,10 @@
 <div class="card">
   <h2>반 정보</h2>
   <div id="info"></div>
+  <p style="margin-top:10px;display:flex;gap:16px;flex-wrap:wrap;">
+    <a id="link-roster" href="ATT-03-attendance-roster.html">이 반 오늘 출결부</a>
+    <a id="link-students" href="MBR-01-student-list.html">이 반 학생 명단</a>
+  </p>
   <div class="actions" style="margin-top:12px;">
     <button class="btn" id="btn-edit">수정</button>
     <button class="btn-danger btn" id="btn-close">반 종료</button>
@@ -104,6 +108,10 @@ async function loadDetail() {
     <div class="info-row"><span class="k">시간표</span>${escapeHtml(scheduleText(classData))}</div>
     <div class="info-row"><span class="k">정원</span>${classData.capacity ? classData.capacity + '명' : '무제한'}</div>
   `;
+  // 한국 날짜(오전 9시 전 UTC 날짜 오류 방지)로 이 반의 오늘 출결부와 수강생 명단을 바로 연다.
+  const today = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+  document.getElementById('link-roster').href = `ATT-03-attendance-roster.html?classId=${encodeURIComponent(classId)}&date=${today}`;
+  document.getElementById('link-students').href = `MBR-01-student-list.html?classId=${encodeURIComponent(classId)}`;
   document.getElementById('btn-edit').onclick = () => location.href = `CLS-02-class-form.html?id=${classId}`;
   document.getElementById('btn-close').style.display = classData.active ? '' : 'none';
 

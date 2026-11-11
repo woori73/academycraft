@@ -10,7 +10,7 @@
   const nav = document.createElement('nav');
   nav.setAttribute('aria-label', 'AcademyCraft');
   nav.style.cssText = 'display:flex;gap:12px;flex-wrap:wrap;align-items:center;padding:12px;background:white;margin-bottom:12px';
-  [['통합 대시보드','/dashboard'],['학원 현황','OPS-02-dashboard.html'],['학생','MBR-01-student-list.html'],['반','CLS-01-class-list.html'],['출결','ATT-03-attendance-roster.html'],['상담','CNS-03-inquiry-inbox.html'],['공지','NTC-01-notice-list.html']].forEach(([label,href])=>{
+  [['학원 홈','/dashboard'],['학원 현황','OPS-02-dashboard.html'],['학생','MBR-01-student-list.html'],['반','CLS-01-class-list.html'],['출결','ATT-03-attendance-roster.html'],['상담','CNS-03-inquiry-inbox.html'],['공지','NTC-01-notice-list.html'],['정보','/dashboard/info']].forEach(([label,href])=>{
     const a=document.createElement('a'); a.textContent=label;a.href=href;a.style.cssText='display:inline-flex;align-items:center;min-height:44px';nav.appendChild(a);
   });
   document.body.prepend(nav);

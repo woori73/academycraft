@@ -30,6 +30,15 @@
   .btn { padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; background: #fff;
          cursor: pointer; font-size: 13px; }
   .btn:hover { background: #f5f5f5; }
+  [hidden] { display: none !important; }
+  .row-form { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .row-form select, .row-form input { padding: 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; min-height: 40px; }
+  .row-form input[name=note], .row-form input[name=reason] { flex: 1 1 160px; min-width: 0; }
+  .btn-save { background: #176253; color: #fff; border-color: #176253; font-weight: bold; }
+  .msg { min-height: 20px; margin-bottom: 8px; font-size: 14px; }
+  .msg.err { color: #c5221f; } .msg.ok { color: #1a7f37; }
+  .events { color: #666; font-size: 12px; margin-top: 4px; }
+  .correct-box { width: 100%; border-top: 1px dashed #ddd; padding-top: 8px; }
   @media (max-width: 600px) {
     .card { flex-direction: column; align-items: stretch; }
   }
@@ -52,35 +61,51 @@
 </div>
 
 <div class="controls">
+  <label for="class-sel" style="position:absolute;left:-9999px">반</label>
   <select id="class-sel"><option value="">반 선택</option></select>
+  <label for="date-in" style="position:absolute;left:-9999px">일자</label>
   <input type="date" id="date-in">
-  <button onclick="loadRoster()">조회</button>
+  <button type="button" onclick="loadRoster()">조회</button>
 </div>
 
-<div id="summary" style="margin-bottom:8px;color:#555;font-size:14px;"></div>
+<div id="summary" style="margin-bottom:8px;color:#555;font-size:14px;" aria-live="polite"></div>
+<div class="msg" id="msg" role="status"></div>
 <div id="list"></div>
 
 <script src="../components/auth.js"></script>
 <script src="../components/api-client.js"></script>
+<script src="../components/screen-rules.js"></script>
 <script>
 var REA_API_BASE = '/api/rea'; // 학원 경로는 로그인 JWT에서 결정
+const R = window.ScreenRules;
+const TODAY = R.kstToday();
+let classesById = {};
 
-const STATUS_LABEL = {
-  PRESENT: '등원', CHECKED_OUT: '하원완료', ABSENT: '결석',
-  LATE: '지각', EARLY_LEAVE: '조퇴', NONE: '미기록'
-};
+function showMsg(text, ok) { const m = document.getElementById('msg'); m.className = 'msg ' + (ok ? 'ok' : 'err'); m.textContent = text || ''; }
+function el(tag, text, cls) { const e = document.createElement(tag); if (text != null) e.textContent = text; if (cls) e.className = cls; return e; }
+function select(name, choices, selected) {
+  const s = el('select'); s.name = name;
+  choices.forEach(([v, t]) => { const o = el('option', t); o.value = v; if (v === selected) o.selected = true; s.append(o); });
+  return s;
+}
 
-document.getElementById('date-in').value = new Date().toISOString().slice(0, 10);
-loadClasses();
+// 주소(?classId=&date=)로 들어오면 그 반·날짜를 바로 연다. 조회 조건은 주소에 남겨 새로고침해도 같은 출결부가 보인다.
+const initial = R.rosterQuery(location.search, TODAY);
+document.getElementById('date-in').value = initial.date;
+document.getElementById('class-sel').addEventListener('change', () => { if (document.getElementById('class-sel').value) loadRoster(); });
+document.getElementById('date-in').addEventListener('change', () => { if (document.getElementById('class-sel').value) loadRoster(); });
+loadClasses().then(() => { if (initial.classId && classesById[initial.classId]) { document.getElementById('class-sel').value = initial.classId; loadRoster(); } else if (initial.classId) showMsg('주소의 반을 찾을 수 없습니다. 반을 다시 선택하세요.', false); });
 
 async function loadClasses() {
   const res = await apiGet(`/@academy/classes`);
+  if (!res.ok) { showMsg('반 목록을 불러오지 못했습니다.', false); return; }
   const classes = await res.json();
   const sel = document.getElementById('class-sel');
   classes.forEach(c => {
+    classesById[c.id] = c;
     const o = document.createElement('option');
     o.value = c.id;
-    o.textContent = `${c.name} (${c.studentCount}명)`;
+    o.textContent = `${c.name}${c.startTime ? ' · ' + c.startTime : ''}`;
     sel.appendChild(o);
   });
 }
@@ -88,70 +113,87 @@ async function loadClasses() {
 async function loadRoster() {
   const classId = document.getElementById('class-sel').value;
   const date = document.getElementById('date-in').value;
-  if (!classId || !date) { alert('반과 일자를 선택하세요.'); return; }
-  const res = await apiGet(`/@academy/attendance/roster?classId=${classId}&date=${date}`);
-  const data = await res.json();
-  if (!res.ok) { alert(data.message || '조회 실패'); return; }
-
-  const counts = {};
-  data.entries.forEach(e => { counts[e.status] = (counts[e.status] || 0) + 1; });
-  document.getElementById('summary').textContent =
-    `${data.className} · ${data.date} · 전체 ${data.entries.length}명` +
-    Object.entries(counts).map(([k, v]) => ` · ${STATUS_LABEL[k]} ${v}명`).join('');
-
+  if (!classId || !R.isDate(date)) { showMsg('반과 일자를 선택하세요.', false); return; }
+  history.replaceState(null, '', `?classId=${encodeURIComponent(classId)}&date=${encodeURIComponent(date)}`);
   const list = document.getElementById('list');
-  list.innerHTML = '';
-  data.entries.forEach(e => {
-    const card = document.createElement('div');
-    card.className = 'card';
-    const times = [
-      e.checkInAt ? `등원 ${e.checkInAt}` : null,
-      e.checkOutAt ? `하원 ${e.checkOutAt}` : null
-    ].filter(Boolean).join(' · ');
-    card.innerHTML = `
-      <div class="who">
-        <span class="nm">${escapeHtml(e.studentName)}</span>
-        <span class="gr">${escapeHtml(e.grade || '')}</span>
-        <span class="status st-${e.status}">${STATUS_LABEL[e.status] || e.status}</span>
-        ${times ? `<div class="times">${escapeHtml(times)}</div>` : ''}
-      </div>
-      <div class="actions">
-        ${e.status === 'NONE' ? `
-          <button class="btn" onclick="quickCheck(${e.studentId},'ABSENT')">결석 기록</button>
-          <button class="btn" onclick="quickCheck(${e.studentId},'LATE')">지각 기록</button>
-          <button class="btn" onclick="quickCheck(${e.studentId},'CHECK_IN')">등원 기록</button>` : ''}
-        ${e.events && e.events.length ? `
-          <button class="btn" data-correct>정정</button>` : ''}
-      </div>`;
-    const correctionButton = card.querySelector('[data-correct]');
-    if (correctionButton) correctionButton.onclick = () => correctLast(e.events[e.events.length-1].id, e.studentName);
-    list.appendChild(card);
+  list.replaceChildren(el('p', '출결부를 불러오는 중입니다…'));
+  const res = await apiGet(`/@academy/attendance/roster?classId=${encodeURIComponent(classId)}&date=${encodeURIComponent(date)}`);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) { list.replaceChildren(); showMsg(data.message || '출결부 조회 실패', false); return; }
+  const sum = R.rosterSummary(data.entries);
+  document.getElementById('summary').textContent =
+    `${data.className} · ${data.date}${data.date === TODAY ? ' (오늘)' : ''} · 전체 ${sum.total}명 · 기록 ${sum.recorded}명 · 미기록 ${sum.missing}명` +
+    Object.entries(sum.byStatus).filter(([k]) => k !== 'NONE').map(([k, v]) => ` · ${R.STATUS_LABEL[k] || k} ${v}명`).join('');
+  list.replaceChildren();
+  if (!data.entries.length) list.append(el('p', '이 반에 배정된 수강생이 없습니다. 반 상세에서 학생을 배정하세요.'));
+  data.entries.forEach(e => list.append(rowCard(e, classId, date)));
+}
+
+function rowCard(e, classId, date) {
+  const card = el('div', null, 'card');
+  const who = el('div', null, 'who');
+  who.append(el('span', e.studentName, 'nm'), el('span', e.grade || '', 'gr'), document.createTextNode(' '), el('span', R.STATUS_LABEL[e.status] || e.status, 'status st-' + e.status));
+  const times = [e.checkInAt ? `등원 ${e.checkInAt}` : null, e.checkOutAt ? `하원 ${e.checkOutAt}` : null].filter(Boolean).join(' · ');
+  if (times) who.append(el('div', times, 'times'));
+  if (e.events && e.events.length) who.append(el('div', '기록: ' + e.events.map(v => (R.EVENT_LABEL[v.eventType] || v.eventType) + ' ' + String(v.occurredAt || '').slice(11, 16) + (v.corrected ? ' (정정됨)' : '')).join(' · '), 'events'));
+  card.append(who);
+
+  // 행에서 바로 기록: 미기록이면 출석·지각·결석 중 고르고 저장. 이미 기록이 있으면 하원·조퇴 등 추가 기록.
+  const form = el('form', null, 'row-form');
+  const label = e.status === 'NONE' ? '기록' : '추가 기록';
+  form.setAttribute('aria-label', `${e.studentName} 출결 ${label}`);
+  const type = select('eventType', e.status === 'NONE' ? R.EVENT_CHOICES : [['CHECK_OUT', '하원'], ['EARLY_LEAVE', '조퇴'], ['LATE', '지각'], ['CHECK_IN', '출석'], ['ABSENT', '결석']], e.status === 'NONE' ? 'CHECK_IN' : 'CHECK_OUT');
+  type.setAttribute('aria-label', `${e.studentName} 출결 구분`);
+  const note = el('input'); note.name = 'note'; note.placeholder = '메모 (선택)'; note.maxLength = 500; note.setAttribute('aria-label', `${e.studentName} 메모`);
+  const save = el('button', e.status === 'NONE' ? '저장' : '추가', 'btn btn-save'); save.type = 'submit';
+  form.append(type, note, save);
+  form.addEventListener('submit', async ev => {
+    ev.preventDefault();
+    save.disabled = true;
+    try {
+      const body = R.checkBody(e.studentId, type.value, note.value, date, TODAY, (classesById[classId] || {}).startTime);
+      const res = await apiPost(`/@academy/attendance/check`, body);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || '기록 실패');
+      showMsg(`${e.studentName} ${R.EVENT_LABEL[type.value]} 저장됨`, true);
+      await loadRoster();
+    } catch (err) { showMsg(err.message, false); save.disabled = false; }
   });
-}
+  const actions = el('div', null, 'actions');
+  actions.append(form);
 
-async function quickCheck(studentId, eventType) {
-  const note = prompt('메모 (선택, 결석·지각 사유 등):', '');
-  if (note === null) return;
-  const res = await apiPost(`/@academy/attendance/check`, { studentId, eventType, note: note || null });
-  const data = await res.json();
-  if (!res.ok) { alert(data.message || '기록 실패'); return; }
-  loadRoster();
-}
-
-async function correctLast(eventId, studentName) {
-  const type = prompt(`${studentName} - 정정 후 출결 구분 (CHECK_IN/CHECK_OUT/ABSENT/LATE/EARLY_LEAVE):`, 'ABSENT');
-  if (type === null) return;
-  const reason = prompt('정정 사유 (필수):', '');
-  if (reason === null || !reason.trim()) { alert('정정 사유는 필수입니다.'); return; }
-  const res = await apiPut(`/@academy/attendance/${eventId}`, { eventType: type.trim().toUpperCase(), reason: reason.trim() });
-  const data = await res.json();
-  if (!res.ok) { alert(data.message || '정정 실패'); return; }
-  loadRoster();
-}
-
-function escapeHtml(s) {
-  return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  // 기존 기록 정정: 마지막 기록의 구분을 바꾸고 사유를 꼭 남긴다(서버 정정 이력에 보관).
+  if (e.events && e.events.length) {
+    const last = e.events[e.events.length - 1];
+    const toggle = el('button', '정정', 'btn'); toggle.type = 'button'; toggle.setAttribute('aria-expanded', 'false');
+    const box = el('form', null, 'row-form correct-box'); box.hidden = true;
+    box.setAttribute('aria-label', `${e.studentName} 기존 기록 정정`);
+    box.append(el('span', `정정 대상: ${R.EVENT_LABEL[last.eventType] || last.eventType} ${String(last.occurredAt || '').slice(11, 16)}`, 'events'));
+    const ctype = select('eventType', R.EVENT_CHOICES, last.eventType); ctype.setAttribute('aria-label', '정정 후 출결 구분');
+    const reason = el('input'); reason.name = 'reason'; reason.required = true; reason.placeholder = '정정 사유 (필수)'; reason.maxLength = 500; reason.setAttribute('aria-label', '정정 사유');
+    const csave = el('button', '정정 저장', 'btn btn-save'); csave.type = 'submit';
+    const cancel = el('button', '취소', 'btn'); cancel.type = 'button';
+    box.append(ctype, reason, csave, cancel);
+    toggle.onclick = () => { box.hidden = !box.hidden; toggle.setAttribute('aria-expanded', String(!box.hidden)); if (!box.hidden) reason.focus(); };
+    cancel.onclick = () => { box.hidden = true; toggle.setAttribute('aria-expanded', 'false'); toggle.focus(); };
+    box.addEventListener('submit', async ev => {
+      ev.preventDefault();
+      csave.disabled = true;
+      try {
+        const body = R.correctionBody(ctype.value, reason.value);
+        const res = await apiPut(`/@academy/attendance/${last.id}`, body);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.message || '정정 실패');
+        showMsg(`${e.studentName} 기록을 정정했습니다.`, true);
+        await loadRoster();
+      } catch (err) { showMsg(err.message, false); csave.disabled = false; }
+    });
+    actions.append(toggle);
+    card.append(actions, box);
+  } else {
+    card.append(actions);
+  }
+  return card;
 }
 </script>
 </body>
