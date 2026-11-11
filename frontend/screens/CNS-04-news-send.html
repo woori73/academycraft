@@ -116,6 +116,8 @@ async function loadStudents() {
     d.innerHTML = `<div class="nm">${escapeHtml(s.name)}</div>` +
       `<div class="meta">${escapeHtml(s.grade || '')} ${escapeHtml(s.parentName || '')}</div>`;
     box.appendChild(d);
+    // 학생 상세에서 ?studentId= 로 들어오면 그 학생을 미리 고른다.
+    if (String(s.id) === new URLSearchParams(location.search).get('studentId') && targetStudentId == null) d.click();
   });
 }
 

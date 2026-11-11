@@ -123,8 +123,12 @@ function setStatus(s) {
 
 async function loadList() {
   if (!memberId()) return;
-  let url = `/@academy/consultations`;
-  if (statusFilter) url += `?status=${statusFilter}`;
+  // ?targetStudentId= 로 들어오면 그 학생의 상담 기록만 본다(학생 상세 → 상담 기록).
+  const q = new URLSearchParams();
+  if (statusFilter) q.set('status', statusFilter);
+  const target = new URLSearchParams(location.search).get('targetStudentId');
+  if (/^[1-9]\d*$/.test(target || '')) q.set('targetStudentId', target);
+  let url = `/@academy/consultations` + (q.toString() ? '?' + q : '');
   const res = await apiGet(url);
   const data = await res.json();
   if (!res.ok) { showMsg(data.message || '조회 실패', false); return; }
